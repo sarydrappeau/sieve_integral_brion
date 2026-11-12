@@ -1,0 +1,13 @@
+# Build artefacts of the Cython kernel
+build/
+*.so
+sieve_integral_brion/_kernel.c
+sieve_integral_brion/_kernel.html
+*.egg-info/
+sieve_integral_brion/.build.lock
+
+# Python and Sage caches
+__pycache__/
+*.pyc
+*.sage.py
+.ipynb_checkpoints/
