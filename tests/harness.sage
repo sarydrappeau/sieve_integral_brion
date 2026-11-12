@@ -40,6 +40,21 @@ def library_path(*parts):
     return path
 
 
+def library_module():
+    r"""
+    Return the library's module ``sieve_integral``, imported from its
+    ``code/`` directory, raising ``SkipTest`` if it cannot be.
+    """
+    code = library_path("code")
+    if code not in sys.path:
+        sys.path.append(code)
+    try:
+        import sieve_integral
+    except ImportError as exc:
+        raise SkipTest(f"the sieve_integral library does not import: {exc}")
+    return sieve_integral
+
+
 @contextmanager
 def environment(**values):
     r"""
