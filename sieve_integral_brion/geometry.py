@@ -268,6 +268,46 @@ def vertex_cones(polytope, centres, border):
     return vertices, cones
 
 
+def generator_table(cones):
+    r"""
+    Return the rays of ``cones`` up to sign, and the cones with each ray
+    given by its position among them and a sign.
+
+    The representative of `\pm g` is the one whose first non-zero entry is
+    positive.
+
+    INPUT:
+
+    - ``cones`` -- as returned by :func:`vertex_cones`.
+
+    OUTPUT: a pair ``(generators, cones)``: the representatives, and triples
+    ``(index, rays, det)`` as those of ``cones``, the rays being pairs
+    ``(position, sign)``.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.geometry import vertex_cones, generator_table
+        sage: box = Polyhedron(vertices=[(1, 1), (2, 1), (1, 3), (2, 3)])
+        sage: generators, cones = generator_table(vertex_cones(box, (1, 1), False)[1])
+        sage: generators
+        [(0, 1), (1, 0)]
+        sage: cones[3]
+        (3, ((1, -1), (0, -1)), 1)
+    """
+    position, generators, indexed = {}, [], []
+    for index, rays, det in cones:
+        pairs = []
+        for ray in rays:
+            sign = 1 if next(c for c in ray if c) > 0 else -1
+            generator = ray if sign > 0 else tuple(-c for c in ray)
+            if generator not in position:
+                position[generator] = len(generators)
+                generators.append(generator)
+            pairs.append((position[generator], sign))
+        indexed.append((index, tuple(pairs), det))
+    return generators, indexed
+
+
 def brion_volume(vertices, cones, k, check=False, seed=1):
     r"""
     Return the volume of the rescaled polytope `P'` from its vertex cones,

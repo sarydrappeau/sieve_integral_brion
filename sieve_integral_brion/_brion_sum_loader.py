@@ -1,8 +1,8 @@
 r"""
-Import the compiled kernel, building it first if needed.
+Import the compiled module ``_brion_sum``, building it first if needed.
 
-The kernel is built by ``sage -python setup.py build_ext --inplace``. When its
-compiled module is missing, or older than ``_kernel.pyx``, :func:`load_kernel`
+The module is built by ``sage -python setup.py build_ext --inplace``. When its
+compiled form is missing, or older than ``_brion_sum.pyx``, :func:`load_brion_sum`
 builds it in the package directory with :func:`sage.misc.cython.cython`, under
 a file lock, unless the environment variable ``SIEVE_BRION_AUTOBUILD`` is
 ``0``.
@@ -25,17 +25,17 @@ import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SOURCE = os.path.join(HERE, "_kernel.pyx")
-NAME = "sieve_integral_brion._kernel"
+SOURCE = os.path.join(HERE, "_brion_sum.pyx")
+NAME = "sieve_integral_brion._brion_sum"
 
 
 def compiled_module():
     r"""
-    Return the path of the compiled kernel in the package directory, or
+    Return the path of the compiled module in the package directory, or
     ``None``.
     """
     for suffix in importlib.machinery.EXTENSION_SUFFIXES:
-        path = os.path.join(HERE, "_kernel" + suffix)
+        path = os.path.join(HERE, "_brion_sum" + suffix)
         if os.path.exists(path):
             return path
     return None
@@ -43,7 +43,7 @@ def compiled_module():
 
 def is_stale():
     r"""
-    Whether the compiled kernel is missing or older than its source.
+    Whether the compiled module is missing or older than its source.
     """
     path = compiled_module()
     return path is None or os.path.getmtime(path) < os.path.getmtime(SOURCE)
@@ -51,8 +51,8 @@ def is_stale():
 
 def build():
     r"""
-    Compile ``_kernel.pyx`` into the package directory with Sage's Cython
-    tools, as ``_kernel`` followed by the extension suffix of this Python.
+    Compile ``_brion_sum.pyx`` into the package directory with Sage's Cython
+    tools, as ``_brion_sum`` followed by the extension suffix of this Python.
     """
     from sage.misc.cython import cython
     with open(os.path.join(HERE, ".build.lock"), "w") as lock:
@@ -71,26 +71,26 @@ def build():
                        sage_namespace=False)
             finally:
                 os.chdir(here)
-            built = [p for p in glob.glob(os.path.join(work, "_kernel*"))
+            built = [p for p in glob.glob(os.path.join(work, "_brion_sum*"))
                      if p.endswith(tuple(importlib.machinery.EXTENSION_SUFFIXES))]
             if not built:
                 raise ImportError(f"building {SOURCE} produced no module")
             suffix = importlib.machinery.EXTENSION_SUFFIXES[0]
-            shutil.move(built[0], os.path.join(HERE, "_kernel" + suffix))
+            shutil.move(built[0], os.path.join(HERE, "_brion_sum" + suffix))
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def load_kernel():
+def load_brion_sum():
     r"""
-    Return the kernel module, building it first if it is stale and
+    Return the module ``_brion_sum``, building it first if it is stale and
     ``SIEVE_BRION_AUTOBUILD`` is not ``0``.
     """
     if is_stale():
         if os.environ.get("SIEVE_BRION_AUTOBUILD", "1") == "0":
             if compiled_module() is None:
                 raise ImportError(
-                    "the kernel of sieve_integral_brion is not built: run "
+                    "the module _brion_sum of sieve_integral_brion is not built: run "
                     "'sage -python setup.py build_ext --inplace'")
         else:
             build()

@@ -16,6 +16,6 @@ Claude Opus 5.5 wrote this package.
 """
 import sage.all  # noqa: F401  (Sage must be initialised before its modules)
 
-from ._kernel_loader import load_kernel
+from ._brion_sum_loader import load_brion_sum
 
-kernel = load_kernel()
+brion_sum = load_brion_sum()

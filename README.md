@@ -33,7 +33,7 @@ argument, relying on LattE.
 sage -python setup.py build_ext --inplace
 ```
 
-Without this step, importing the package builds its kernel the first time
+Without this step, importing the package builds its compiled module the first time
 (set `SIEVE_BRION_AUTOBUILD=0` to prevent it).
 
 ## Tests

@@ -1,8 +1,8 @@
-# Build artefacts of the Cython kernel
+# Build artefacts of the Cython module _brion_sum
 build/
 *.so
-sieve_integral_brion/_kernel.c
-sieve_integral_brion/_kernel.html
+sieve_integral_brion/_brion_sum.c
+sieve_integral_brion/_brion_sum.html
 *.egg-info/
 sieve_integral_brion/.build.lock
 

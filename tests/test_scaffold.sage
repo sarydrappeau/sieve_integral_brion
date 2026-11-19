@@ -1,5 +1,5 @@
 r"""
-The package imports, finds the DDE module, and builds its kernel in
+The package imports, finds the DDE module, and builds its compiled module in
 two possible ways (through setup.py or on first import).
 """
 import shutil
@@ -9,8 +9,7 @@ import tempfile
 
 def test_import():
     import sieve_integral_brion
-    total = sieve_integral_brion.kernel.ball_sum([RBF(1), RBF(1/3)], 53)
-    assert total.contains_exact(QQ(4/3)), total
+    assert sieve_integral_brion.brion_sum.BrionSum.__name__ == "BrionSum"
 
 
 def test_dde_import():
@@ -69,7 +68,7 @@ def test_dde_download():
 def copy_sources(target):
     r"""
     Copy ``setup.py`` and the sources of the package, without any compiled
-    kernel, into ``target``.
+    module, into ``target``.
     """
     shutil.copy(os.path.join(REPOSITORY, "setup.py"), target)
     package = os.path.join(target, "sieve_integral_brion")
@@ -79,8 +78,7 @@ def copy_sources(target):
             shutil.copy(os.path.join(REPOSITORY, "sieve_integral_brion", name), package)
 
 
-CHECK_IMPORT = ("import sieve_integral_brion as s; from sage.all import RBF; "
-                "print(s.kernel.ball_sum([RBF(2)], 53))")
+CHECK_IMPORT = "import sieve_integral_brion as s; print(s.brion_sum.BrionSum.__name__)"
 
 
 def sage_python(arguments, cwd, **env):
@@ -99,7 +97,7 @@ def test_build_autobuild():
         disabled = sage_python(["-c", CHECK_IMPORT], target, SIEVE_BRION_AUTOBUILD="0")
         assert disabled.returncode != 0 and "not built" in disabled.stderr, disabled.stderr
         built = sage_python(["-c", CHECK_IMPORT], target)
-        assert built.returncode == 0 and "2.000" in built.stdout, built.stderr
+        assert built.returncode == 0 and "BrionSum" in built.stdout, built.stderr
 
 
 def test_build_setup():
@@ -108,7 +106,7 @@ def test_build_setup():
         build = sage_python(["setup.py", "build_ext", "--inplace"], target)
         assert build.returncode == 0, build.stderr[-2000:]
         loaded = sage_python(["-c", CHECK_IMPORT], target, SIEVE_BRION_AUTOBUILD="0")
-        assert loaded.returncode == 0 and "2.000" in loaded.stdout, loaded.stderr
+        assert loaded.returncode == 0 and "BrionSum" in loaded.stdout, loaded.stderr
 
 
 TESTS = {
