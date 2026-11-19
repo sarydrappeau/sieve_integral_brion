@@ -11,3 +11,8 @@ __pycache__/
 *.pyc
 *.sage.py
 .ipynb_checkpoints/
+
+# LaTeX outputs of the mathematical document (its PDF is tracked)
+mathematics/*.aux
+mathematics/*.log
+mathematics/*.out

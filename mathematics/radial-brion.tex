@@ -1,0 +1,753 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.7cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Q}{\mathbb{Q}}
+\newcommand{\scal}[2]{\langle #1, #2\rangle}
+\newcommand{\vol}{\operatorname{vol}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\dd}{\mathrm{d}}
+
+\title{Sieve integrals by Brion's formula\\ integrated along the radius}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{The integral}
+
+Let $d \geq 2$ and let $P \subset \R_{>0}^d$ be a full-dimensional polytope
+with rational vertices. The aim is a rigorous enclosure of
+\begin{equation}\label{eq:plain}
+  I(P) = \int_P \frac{\dd t}{t_1 \cdots t_d},
+  \qquad \dd t = \dd t_1 \cdots \dd t_d.
+\end{equation}
+Section~\ref{sec:plain} computes it in three steps. The factor $1/(t_1
+\cdots t_d)$ is written as an integral over a simplex and a radial variable;
+the integrals over $P$ and along the radius are then given in closed form by
+Brion's formula; and the remaining integral over the simplex is computed by
+a cubature rule, with a rigorous error bound. Section~\ref{sec:general}
+extends the method to integrals with a weight $W(t)$, such as Harman's
+integrals and the integrals $\bar h_2$, and to polytopes lying on the
+hyperplane $\sum_j t_j = 1$; in its notation, Section~\ref{sec:plain} is the
+case $W = 1$, $\sigma = 0$. Section~\ref{sec:implementation} describes the
+implementation.
+
+\section{The plain integral}
+\label{sec:plain}
+
+\subsection{Rescaling}
+\label{sec:rescaling}
+
+Let $\mu \in \R_{>0}^d$, and let $P' = \{ t' \in \R^d : (\mu_1 t'_1, \ldots,
+\mu_d t'_d) \in P \}$. The substitution $t_j = \mu_j t'_j$ leaves the
+measure $\dd t / (t_1 \cdots t_d)$ unchanged, so that $I(P) = I(P')$. From
+now on we drop the primes, and write $t$ for the variable of $P$. The
+centres are chosen as $\mu_j = (t_j^{-} + t_j^{+})/2$, where $[t_j^{-},
+t_j^{+}]$ is the range of $t_j$ on the original polytope: then
+\begin{equation}\label{eq:delta}
+  t_j \in [1 - \delta_j, 1 + \delta_j] \quad (t \in P),
+  \qquad \delta_j = \frac{t_j^{+} - t_j^{-}}{t_j^{+} + t_j^{-}} < 1,
+\end{equation}
+and $\delta = \max_j \delta_j$ governs the cost of the computation
+(Sections~\ref{sec:approximation} and~\ref{sec:pieces}).
+
+\subsection{The radial variable}
+
+Let $\Delta = \{ x \in \R_{\geq 0}^d : \sum_j x_j = 1 \}$ be the standard
+simplex, measured by $\dd x = \dd x_1 \cdots \dd x_{d-1}$; its volume is
+$1/(d-1)!$.
+
+\begin{lemma}\label{lem:radial0}
+For $t \in \R_{>0}^d$,
+\[
+  \frac{1}{t_1 \cdots t_d}
+  = \int_\Delta \int_0^\infty r^{d-1} e^{-r \scal{x}{t}} \, \dd r \, \dd x
+  = (d-1)! \int_\Delta \frac{\dd x}{\scal{x}{t}^{d}}.
+\]
+\end{lemma}
+
+\begin{proof}
+Since $1/t_j = \int_0^\infty e^{-u t_j} \, \dd u$, the left-hand side is
+$\int_{\R_{>0}^d} e^{-\scal{u}{t}} \, \dd u$. Write $u = r x$ with $r =
+\sum_j u_j > 0$ and $x \in \Delta$: then $\dd u = r^{d-1} \dd r \, \dd x$,
+which gives the first expression. The second follows from $\int_0^\infty
+r^{d-1} e^{-r\ell} \, \dd r = (d-1)! \, \ell^{-d}$ for $\ell > 0$.
+\end{proof}
+
+Lemma~\ref{lem:radial0} is the Feynman parametrisation of the product $t_1
+\cdots t_d$. Feynman wrote it for two factors~\cite[Appendix,
+(14a)]{Feynman}.
+
+The integrand being positive, Tonelli's theorem gives
+\begin{equation}\label{eq:G0}
+  I(P) = \int_\Delta G(x) \, \dd x,
+  \qquad
+  G(x) = \int_0^\infty r^{d-1} J(r x) \, \dd r
+  = (d-1)! \int_P \frac{\dd t}{\scal{x}{t}^{d}},
+\end{equation}
+where $J(y) = \int_P e^{-\scal{y}{t}} \, \dd t$. Since $\scal{x}{t} \geq
+\min_P \min_j t_j > 0$ for $x \in \Delta$ and $t \in P$, the last expression
+shows that $G$ is analytic on a neighbourhood of $\Delta$. The
+$d$-dimensional integral $I(P)$ has become a $(d-1)$-dimensional integral of
+$G$. The point is that the exponential integral $J$, and then its radial
+integral in~\eqref{eq:G0}, are given in closed form by Brion's formula.
+
+\subsection{Brion's formula}
+
+For a vertex $v$ of $P$, the tangent cone of $P$ at $v$ is $K_v = v +
+\R_{\geq 0}(P - v)$. Choose a triangulation of each $K_v$ into simplicial
+cones
+\[
+  C = v + \R_{\geq 0} \, g_1 + \cdots + \R_{\geq 0} \, g_d,
+\]
+whose rays $g_i \in \Z^d$ are primitive integer vectors along edges of $P$
+at $v$, and let $\det C$ be the determinant of $g_1, \ldots, g_d$. We write
+$C \ni v$ for the cones of the triangulation of $K_v$, and $g \in C$ for
+their rays.
+
+\begin{theorem}[{Brion~\cite[Th\'eor\`eme~3.2]{Brion}}]
+\label{thm:brion}
+As an identity of meromorphic functions of $y \in \C^d$,
+\[
+  \int_P e^{-\scal{y}{t}} \, \dd t
+  = \sum_{v} \sum_{C \ni v} |\det C| \,
+    \frac{e^{-\scal{y}{v}}}{\prod_{g \in C} \scal{y}{g}}.
+\]
+\end{theorem}
+
+When $\operatorname{Re}\scal{y}{g} > 0$ for every ray $g$ of $C$, the term
+of $C$ is $\int_C e^{-\scal{y}{t}} \, \dd t$, by the substitution $t = v +
+\sum_i \lambda_i g_i$, whose Jacobian is $|\det C|$; Brion's theorem says
+that the integrals over the tangent cones, continued meromorphically, add up
+to the integral over the polytope. Brion states it for a polytope with
+vertices in a lattice. He deduces it by Riemann sums from the corresponding
+formula for the generating function of the lattice
+points~\cite[Th\'eor\`eme~2.4]{Brion}. A dilation extends it to rational
+vertices. The triangulations of different vertices need not agree.
+
+\subsection{The integrand in closed form}
+\label{sec:closed}
+
+Fix $x \in \Delta$ outside the hyperplanes $\scal{x}{g} = 0$, and put
+\[
+  \ell_v = \scal{x}{v} > 0, \qquad
+  c_v(x) = \sum_{C \ni v} \frac{|\det C|}{\prod_{g \in C} \scal{x}{g}}.
+\]
+For $r > 0$, Theorem~\ref{thm:brion} at $y = r x$ gives
+\begin{equation}\label{eq:J0}
+  J(r x) = r^{-d} \sum_v c_v(x) \, e^{-r \ell_v}.
+\end{equation}
+As $r \to 0$, $J(r x)$ tends to $\vol(P)$, so that $\sum_v c_v(x) e^{-r
+\ell_v} = r^d J(r x)$ tends to $0$: $\sum_v c_v(x) = 0$.
+
+\begin{theorem}\label{thm:G0}
+For $x \in \Delta$ outside the hyperplanes $\scal{x}{g} = 0$,
+\[
+  G(x) = -\sum_v c_v(x) \log \ell_v.
+\]
+\end{theorem}
+
+\begin{proof}
+Since $\sum_v c_v(x) = 0$, \eqref{eq:J0} gives
+\[
+  r^{d-1} J(r x) = \sum_v c_v(x) \, \frac{e^{-r \ell_v} - e^{-r}}{r}.
+\]
+Each term is integrable on $(0, \infty)$, and its integral is given by
+Frullani's integral: for $\ell > 0$ and $\varepsilon > 0$,
+\[
+  \int_\varepsilon^\infty \frac{e^{-r \ell} - e^{-r}}{r} \, \dd r
+  = \int_{\varepsilon \ell}^{\varepsilon} \frac{e^{-u}}{u} \, \dd u,
+\]
+which tends to $-\log \ell$ as $\varepsilon \to 0$. The theorem follows
+by~\eqref{eq:G0}.
+\end{proof}
+
+For fixed $x$, Theorem~\ref{thm:G0} is the case $\varphi = \log$ of
+\begin{equation}\label{eq:divided}
+  \int_P \varphi^{(d)}(\scal{x}{t}) \, \dd t
+  = (-1)^d \sum_v c_v(x) \, \varphi(\ell_v),
+\end{equation}
+since $G(x) = (d-1)! \int_P \scal{x}{t}^{-d} \, \dd t$ by~\eqref{eq:G0},
+and $\log^{(d)}(u) = (-1)^{d-1} (d-1)! \, u^{-d}$; the case $\varphi(u) =
+e^{-u}$ is Theorem~\ref{thm:brion} at $y = x$. For a simplex,
+\eqref{eq:divided} is the Hermite--Genocchi formula for divided
+differences~\cite{deBoor}. Burgos Gil, Philippon and Sombra state it in this
+form for a simplex and $\varphi$ of class $C^d$ on
+$\R$~\cite[Corollary~6.1.10]{BGPS}. It is a case of their formula for any
+polytope and any direction~\cite[Proposition~6.1.4]{BGPS}. For $x$ outside
+the hyperplanes $\scal{x}{g} = 0$, that formula only involves the values of
+$\varphi$ at the $\ell_v$. Comparing its cases $\varphi(u) = e^{-\lambda
+u}$, $\lambda > 0$, with Theorem~\ref{thm:brion} identifies its coefficients
+with those of~\eqref{eq:divided}. Engel gives it for any convex polytope and
+$\varphi$ entire~\cite[Corollary~4.1]{Engel}. Baldoni et
+al.~\cite{BaldoniEtAl} treat the powers $\varphi(u) = u^{d+M}$, $M \geq 0$.
+Both sides depend on $\varphi$ only through its values on the interval
+$\scal{x}{P} \subset (0, \infty)$, on which $\log$ coincides with a function
+of class $C^d$ on $\R$.
+
+\begin{remark}\label{rem:singular}
+$G$ is analytic on a neighbourhood of $\Delta$, but the terms of
+Theorem~\ref{thm:G0} have poles on the hyperplanes $\scal{x}{g} = 0$, which
+cancel in the sum; on these hyperplanes, the formula is undefined.
+Proposition~6.1.4 of~\cite{BGPS} and Peterson's degenerate version of
+Brion's formula~\cite{Peterson} cover this case. Their terms are attached to
+the faces of $P$ on which $\scal{x}{\cdot}$ is constant.
+Section~\ref{sec:rule} explains how the nodes of the cubature rule avoid
+these hyperplanes.
+\end{remark}
+
+\subsection{The error bound}
+\label{sec:approximation}
+
+The integral $\int_\Delta G$ is computed by a cubature rule
+$\mathcal{Q}(G) = \sum_\nu w_\nu G(x_\nu)$ with positive weights and total
+weight $\vol(\Delta) = 1/(d-1)!$, exact on the polynomials of degree at most
+$N$ on $\Delta$; Stroud's conical product rule is such a rule
+(Section~\ref{sec:rule}). The values $G(x_\nu)$ are computed in closed form
+by Theorem~\ref{thm:G0}: no polynomial approximation of $G$ is ever formed.
+Its existence only bounds the error of the rule. Indeed, for any polynomial
+$p$ of degree at most $N$, $\mathcal{Q}(p) = \int_\Delta p$, so that
+\begin{equation}\label{eq:positive}
+  \Bigl| \mathcal{Q}(G) - \int_\Delta G \Bigr|
+  = \Bigl| \mathcal{Q}(G - p) - \int_\Delta (G - p) \Bigr|
+  \leq \frac{2}{(d-1)!} \sup_\Delta |G - p|.
+\end{equation}
+
+The polynomial $p$ comes from~\eqref{eq:G0}. Since $\sum_j x_j = 1$,
+\[
+  \scal{x}{t} = 1 + \scal{x}{t - \one}, \qquad |\scal{x}{t - \one}| \leq
+  \sum_j x_j \delta_j \leq \delta \qquad (x \in \Delta, \ t \in P),
+\]
+by~\eqref{eq:delta}. Choose a rational $\tau \in (0, 1)$ with $\eta =
+2\tau/(1 + \tau^2) \geq \delta$. For an integer $e \geq 1$, the function $(1
++ \eta u)^{-e}$ is analytic on a neighbourhood of $[-1, 1]$, and has a
+Chebyshev expansion $\sum_{m \geq 0} c^{(e)}_m T_m(u)$ there. For $e = 1$,
+\[
+  \frac{1}{1 + \eta\cos\theta} = \frac{1 + \tau^2}{1 - \tau^2} \Bigl( 1 + 2
+  \sum_{m \geq 1} (-\tau)^m \cos m\theta \Bigr),
+\]
+and the coefficients for $e \geq 2$ follow by a recurrence; they are
+rational, and $(-1)^m c^{(e)}_m > 0$, so that the tails
+\[
+  E^{(e)}_M = \sum_{m > M} |c^{(e)}_m| = (1 - \eta)^{-e} - \sum_{m \leq M}
+  |c^{(e)}_m|, \qquad (1 - \eta)^{-1} = \frac{1 + \tau^2}{(1 - \tau)^2},
+\]
+are computed exactly. They decay like $\tau^M$, up to a polynomial factor
+in $M$.
+
+Let
+\[
+  p(x) = (d-1)! \int_P \sum_{m \leq N} c^{(d)}_m T_m\Bigl(
+  \frac{\scal{x}{t - \one}}{\eta} \Bigr) \, \dd t.
+\]
+Since $x \mapsto \scal{x}{t - \one}$ is linear, $p$ is a polynomial of
+degree at most $N$ in $x$. Since $\scal{x}{t}^{-d} = (1 + \eta u)^{-d}$ with
+$u = \scal{x}{t - \one}/\eta \in [-1, 1]$, and $|T_m| \leq 1$ on $[-1, 1]$,
+comparing with~\eqref{eq:G0} gives $\sup_\Delta |G - p| \leq (d-1)! \vol(P)
+E^{(d)}_N$, and~\eqref{eq:positive} gives the following bound.
+
+\begin{theorem}\label{thm:bound0}
+$\displaystyle \Bigl| \mathcal{Q}(G) - \int_\Delta G \Bigr|
+  \leq 2 \vol(P) \, E^{(d)}_N$.
+\end{theorem}
+
+In~\cite{DM}, $1/(t_1 \cdots t_d)$ is expanded in Taylor series on balanced
+pieces of $P$, and the resulting polynomials are integrated exactly with
+LattE~\cite{BaldoniEtAl,DeLoeraEtAl}. Here, the expansion only enters the
+error bound, the integral itself being computed from Brion's formula; and
+the Chebyshev expansion~\cite{Trefethen} decays faster than the Taylor
+expansion for the same $\delta$, like $\tau^M$ instead of $\delta^M$.
+
+\section{The general integral}
+\label{sec:general}
+
+\subsection{The integrals}
+
+Let $d \geq 2$ and let $P \subset \R_{>0}^d$ be a polytope with rational
+vertices, of one of two kinds:
+\begin{itemize}
+\item $P$ is full-dimensional; we put $k = d$, and measure $P$ by
+  $\dd t = \dd t_1 \cdots \dd t_d$;
+\item $P$ lies on the hyperplane $\sum_j t_j = 1$ and has dimension
+  $k = d - 1$ there; it is measured by $\dd t_1 \cdots \dd t_{d-1}$, the
+  coordinates $t_1, \ldots, t_{d-1}$ parametrising the hyperplane.
+\end{itemize}
+We put $\sigma = d - k \in \{0, 1\}$. The aim is a rigorous enclosure of
+\begin{equation}\label{eq:integral}
+  I(P) = \int_P W(t) \, \frac{\dd t_1 \cdots \dd t_k}{t_1 \cdots t_d},
+  \qquad
+  W(t) = \Phi(L(t)) \, Q\Bigl(\frac{\psi(t)}{t_s}\Bigr),
+\end{equation}
+where
+\begin{itemize}
+\item $L = (L_1, \ldots, L_F)$ is a family of affine forms, the linear part
+  of $L_f$ being $t \mapsto \scal{A_f}{t}$, and $\Phi \in \R[y_1, \ldots,
+  y_F]$;
+\item $\psi(t) = \psi_0 + \scal{\psi_1}{t}$ is an affine form,
+  $s \in \{1, \ldots, d\}$, and $Q(y) = \sum_{n=0}^{D} q_n y^n$.
+\end{itemize}
+The plain sieve integral is $W = 1$; Section~\ref{sec:plain} treated it when
+$\sigma = 0$. Harman's integrals carry a factor $B(t_i/t_s)$, where $B(u) =
+u\,\omega(u)$ is Buchstab's function, and a polynomial in $t$, which is a
+factor $\Phi(L(t))$. On a piece of $P$ where $t_i/t_s$ lies in an interval
+$[u_0, u_1]$ of the approximants of $B$, a truncated Chebyshev expansion of
+$B$ in the variable $(2u - u_0 - u_1)/(u_1 - u_0)$ makes $B(t_i/t_s)$ the
+factor $Q(\psi(t)/t_s)$, with $\psi(t) = (2 t_i - (u_0 + u_1) t_s)/(u_1 -
+u_0)$. The integrals $\bar h_2$ carry products of Dickman's function $\rho$
+and of $B$ at affine arguments, which truncated Chebyshev expansions turn
+into a product $\Phi(L(t)) = \prod_f \Phi_f(L_f(t))$. The truncation errors
+of these expansions, and the radii of their coefficients, are accounted for
+separately (Section~\ref{sec:budget}); the rest of the text treats $\Phi$
+and $Q$ as exact polynomials.
+
+\subsection{Rescaling}
+
+The substitution $t_j = \mu_j t'_j$ of Section~\ref{sec:rescaling} gives
+\begin{equation}\label{eq:rescaled}
+  I(P) = \kappa \int_{P'} \Phi(L'(t')) \,
+  Q\Bigl(\frac{\psi'(t')}{t'_s}\Bigr)
+  \frac{\dd t'_1 \cdots \dd t'_k}{t'_1 \cdots t'_d},
+  \qquad
+  \kappa = \frac{\mu_1 \cdots \mu_k}{\mu_1 \cdots \mu_d} =
+  \begin{cases} 1 & \text{if } k = d, \\ 1/\mu_d & \text{if } k = d - 1,
+  \end{cases}
+\end{equation}
+with $L'(t') = L(\mu_1 t'_1, \ldots, \mu_d t'_d)$ and $\psi'(t') =
+\psi(\mu_1 t'_1, \ldots, \mu_d t'_d)/\mu_s$, again affine. When $k = d - 1$,
+$P'$ lies on the hyperplane $\sum_j \mu_j t'_j = 1$, on which $t'_1, \ldots,
+t'_k$ are still coordinates since $\mu_d \neq 0$.
+
+The integral~\eqref{eq:rescaled} has the form~\eqref{eq:integral}, and
+everything below holds for any polytope $P \subset \R_{>0}^d$ lying in an
+affine subspace of dimension $k \in \{d - 1, d\}$ on which $t_1, \ldots,
+t_k$ are coordinates. As in Section~\ref{sec:rescaling}, we drop the primes,
+and the centres $\mu_j$ are chosen so that~\eqref{eq:delta} holds.
+
+\subsection{The radial variable}
+
+\begin{lemma}\label{lem:radial}
+For $t \in \R_{>0}^d$ and $n \geq 0$,
+\[
+  \frac{1}{t_1 \cdots t_d \, t_s^n}
+  = \frac{1}{n!} \int_\Delta x_s^n \int_0^\infty r^{d+n-1}
+    e^{-r \scal{x}{t}} \, \dd r \, \dd x
+  = \frac{(d+n-1)!}{n!} \int_\Delta \frac{x_s^n}{\scal{x}{t}^{d+n}} \, \dd x.
+\]
+\end{lemma}
+
+\begin{proof}
+Since $t_s^{-n-1} = (n!)^{-1} \int_0^\infty u^n e^{-u t_s} \, \dd u$, the
+left-hand side is
+\[
+  \frac{1}{n!} \int_{\R_{>0}^d} u_s^n \, e^{-\scal{u}{t}} \, \dd u.
+\]
+The substitution $u = r x$ of the proof of Lemma~\ref{lem:radial0}, in
+which $u_s^n = r^n x_s^n$, gives the first expression. The second follows
+from $\int_0^\infty r^{a-1} e^{-r\ell} \, \dd r = \Gamma(a) \ell^{-a}$ for
+$\ell > 0$.
+\end{proof}
+
+Lemma~\ref{lem:radial} is the Feynman parametrisation of the product $t_1
+\cdots t_d \, t_s^n$. Feynman wrote it for two factors, in the cases $n =
+0$ and $n = 1$~\cite[Appendix, (14a) and (15a)]{Feynman}.
+
+Expanding $Q$ and applying Lemma~\ref{lem:radial} to each term, Fubini's
+theorem (the integrand is bounded on $P$, and $\scal{x}{t} \geq \min_{P}
+\min_j t_j > 0$) gives
+\begin{equation}\label{eq:G}
+  \int_P W(t) \, \frac{\dd t_1 \cdots \dd t_k}{t_1 \cdots t_d}
+  = \int_\Delta G(x) \, \dd x,
+  \qquad
+  G(x) = \sum_{n=0}^{D} \frac{q_n}{n!} \, x_s^n \int_0^\infty r^{d+n-1}
+    J_n(r x) \, \dd r,
+\end{equation}
+where
+\[
+  J_n(y) = \int_P \Phi(L(t)) \, \psi(t)^n \, e^{-\scal{y}{t}} \,
+  \dd t_1 \cdots \dd t_k,
+\]
+and equivalently
+\begin{equation}\label{eq:G-feynman}
+  G(x) = \sum_{n=0}^{D} q_n \frac{(d+n-1)!}{n!} \, x_s^n \int_P
+    \frac{\Phi(L(t)) \, \psi(t)^n}{\scal{x}{t}^{d+n}} \,
+    \dd t_1 \cdots \dd t_k.
+\end{equation}
+By~\eqref{eq:G-feynman}, $G$ is analytic on a neighbourhood of $\Delta$.
+The $k$-dimensional integral of the left-hand side of~\eqref{eq:G}, whose
+integrand has no simple primitive, has become a $(d-1)$-dimensional
+integral of $G$. As in Section~\ref{sec:plain}, the exponential integrals
+$J_n$, and then their radial integrals in~\eqref{eq:G}, are given in closed
+form by Brion's formula.
+
+\subsection{Brion's formula on a hyperplane}
+
+When $k = d - 1$, the cones $C$ of the triangulations of the tangent cones
+$K_v$ have $k$ rays, and $\det C$ denotes the determinant of the $k \times
+k$ matrix of their first $k$ coordinates. Theorem~\ref{thm:brion} then holds
+with $\dd t_1 \cdots \dd t_k$ in place of $\dd t$. Indeed, the projection of
+$P$ on the first $k$ coordinates is a full-dimensional polytope of $\R^k$
+with rational vertices; on the affine span of $P$, $\scal{y}{t}$ is an
+affine function of $(t_1, \ldots, t_k)$, whose linear part sends the first
+$k$ coordinates of each ray $g$ to $\scal{y}{g}$; and the theorem for the
+projection is the stated identity.
+
+\subsection{Polynomial weights}
+
+Fix $x \in \Delta$ outside the hyperplanes $\scal{x}{g} = 0$, let $\ell_v$
+and $c_v(x)$ be as in Section~\ref{sec:closed}, and put
+\[
+  \alpha_{f,g} = \frac{\scal{A_f}{g}}{\scal{x}{g}}, \qquad
+  \alpha_{\psi,g} = \frac{\scal{\psi_1}{g}}{\scal{x}{g}}.
+\]
+Theorem~\ref{thm:brion} at the point $y$ with $\scal{y}{t} = r\scal{x}{t} -
+\sum_f \zeta_f \scal{A_f}{t} - \xi \scal{\psi_1}{t}$, for $r > 0$, $\zeta
+\in \C^F$ and $\xi \in \C$ small, gives
+\begin{multline*}
+  \int_P e^{-r\scal{x}{t} + \scal{\zeta}{L(t)} + \xi \psi(t)} \,
+  \dd t_1 \cdots \dd t_k \\
+  = \sum_v e^{-r\ell_v + \scal{\zeta}{L(v)} + \xi\psi(v)}
+    \sum_{C \ni v} \frac{|\det C|}{r^k \prod_{g \in C} \scal{x}{g}}
+    \prod_{g \in C} \Bigl( 1 - \frac{1}{r} \Bigl( \sum_f \zeta_f
+    \alpha_{f,g} + \xi \, \alpha_{\psi,g} \Bigr) \Bigr)^{-1}.
+\end{multline*}
+Applying $\Phi(\partial_\zeta) \partial_\xi^n$ at $\zeta = 0$, $\xi = 0$
+turns the left-hand side into $J_n(rx)$. On the right-hand side, Taylor's
+formula gives $\Phi(\partial_\zeta)\bigl(e^{\scal{\zeta}{z}} U(\zeta)\bigr)
+|_{\zeta = 0} = \sum_\beta \partial^\beta \Phi(z) \, [\zeta^\beta] U$ and
+$\partial_\xi^n \bigl(e^{\xi w} U(\xi)\bigr)|_{\xi = 0} = n! \sum_{i + l =
+n} \frac{w^i}{i!} [\xi^l] U$, for power series $U$, where $[\cdot]$ denotes
+a coefficient. Therefore
+\begin{equation}\label{eq:J}
+  J_n(rx) = \sum_v e^{-r\ell_v} \sum_{\beta \in S}
+    \sum_{i + l = n} n! \, \partial^\beta \Phi(L(v)) \,
+    \frac{\psi(v)^i}{i!} \, c_{v,\beta,l}(x) \, r^{-k - |\beta| - l},
+\end{equation}
+with
+\[
+  c_{v,\beta,l}(x) = \sum_{C \ni v} \frac{|\det C|}{\prod_{g \in C}
+    \scal{x}{g}} \, Y^C_{\beta,l}, \qquad
+  Y^C_{\beta,l} = [\zeta^\beta \xi^l] \prod_{g \in C} \Bigl( 1 -
+    \sum_f \zeta_f \alpha_{f,g} - \xi \, \alpha_{\psi,g} \Bigr)^{-1}.
+\]
+Since $Y^C_{0,0} = 1$, $c_{v,0,0} = c_v$. Here $S$ is any set of exponents
+which contains those with $\partial^\beta \Phi \neq 0$, that is, those below
+the exponent of some monomial of $\Phi$, and which is closed under taking
+smaller exponents. The box $\prod_f [0, \deg \Phi_f]$ suits the product
+$\Phi(L) = \prod_f \Phi_f(L_f)$ of the integrals $\bar h_2$, and the set
+$\{|\beta| \leq \deg \Phi\}$ suits any $\Phi$. The coefficients $Y^C$ are
+computed as described in Section~\ref{sec:coefficients}.
+
+\subsection{The radial integral}
+
+Inserting~\eqref{eq:J} in~\eqref{eq:G} with $n = i + l$ leads to the
+integrals $\int_0^\infty r^{a-1} e^{-r\ell_v} \, \dd r$ with $a = i -
+|\beta| + \sigma$, which diverge at $0$ when $a \leq 0$, although
+$r^{d+n-1} J_n(rx)$ is integrable on $(0, \infty)$. In
+Section~\ref{sec:closed}, the only exponent was $a = 0$, and subtracting
+$e^{-r}$ made each term integrable. In general, a term with $a \leq 0$
+diverges like $r^{a-1}, \ldots, r^{-1}$ at $0$, and the terms are
+regularised by analytic continuation instead: they are replaced by
+\begin{equation}\label{eq:R}
+  R(a, \ell) = (a - 1)! \, \ell^{-a} \quad (a \geq 1), \qquad
+  R(-e, \ell) = (-1)^e \, \frac{\ell^e}{e!} \, (H_e - \log \ell) \quad
+  (e \geq 0),
+\end{equation}
+where $H_e = 1 + \frac12 + \cdots + \frac1e$ is the harmonic number.
+
+\begin{lemma}\label{lem:regularisation}
+In~\eqref{eq:G}, the radial integral of~\eqref{eq:J} is the sum of its
+terms, each $\int_0^\infty r^{a-1} e^{-r\ell} \, \dd r$ being replaced by
+$R(a, \ell)$.
+\end{lemma}
+
+\begin{proof}
+Multiply the integrand by $r^\varepsilon$. For $\operatorname{Re}
+\varepsilon$ large, every term is integrable, and its integral is
+$\Gamma(a + \varepsilon) \ell^{-a-\varepsilon}$, a meromorphic function of
+$\varepsilon$. The integral of the whole, $\int_0^\infty
+r^{d+n-1+\varepsilon} J_n(rx) \, \dd r$, is holomorphic for
+$\operatorname{Re} \varepsilon > -(d + n)$, since $J_n(rx)$ is bounded as $r
+\to 0$ and decays exponentially as $r \to \infty$; by analytic continuation
+it is the sum of the terms, whose poles at $\varepsilon = 0$ therefore
+cancel. Its value at $\varepsilon = 0$ is the sum of the constant terms of
+the Laurent expansions. For $a \geq 1$ this is $(a-1)! \, \ell^{-a}$. For
+$a = -e \leq 0$, $\Gamma(\varepsilon - e) = \frac{(-1)^e}{e!} \bigl(
+\varepsilon^{-1} + H_e - \gamma + O(\varepsilon) \bigr)$ and $\ell^{e -
+\varepsilon} = \ell^e (1 - \varepsilon \log \ell + O(\varepsilon^2))$, so
+the constant term is $\frac{(-1)^e}{e!} \ell^e (H_e - \gamma - \log \ell)$.
+The terms in Euler's constant $\gamma$ add up to $-\gamma$ times the sum of
+the residues, which vanishes.
+\end{proof}
+
+\begin{theorem}\label{thm:G}
+For $x \in \Delta$ outside the hyperplanes $\scal{x}{g} = 0$,
+\[
+  G(x) = \sum_v \sum_{\beta \in S} \sum_{l=0}^{D}
+    c_{v,\beta,l}(x) \, \partial^\beta \Phi(L(v))
+    \sum_{i=0}^{D-l} q_{l+i} \, x_s^{l+i} \, \frac{\psi(v)^i}{i!} \,
+    R(i - |\beta| + \sigma, \ell_v).
+\]
+\end{theorem}
+
+\begin{proof}
+Combine~\eqref{eq:G}, \eqref{eq:J} and Lemma~\ref{lem:regularisation}: the
+exponent of $r$ in the term of $(v, \beta, i, l)$ is $d + n - 1 - k - |\beta|
+- l = \sigma + i - |\beta| - 1$, and the factors $n!$ cancel.
+\end{proof}
+
+For $W = 1$, $S = \{0\}$ and $D = 0$, and Theorem~\ref{thm:G} reads
+\[
+  G(x) = -\sum_v c_v(x) \log \ell_v \quad (k = d), \qquad
+  G(x) = \sum_v \frac{c_v(x)}{\ell_v} \quad (k = d - 1).
+\]
+The first identity is Theorem~\ref{thm:G0}. The second is the case
+$\varphi(u) = 1/u$ of the analogue
+\[
+  \int_P \varphi^{(k)}(\scal{x}{t}) \, \dd t_1 \cdots \dd t_k
+  = (-1)^k \sum_v c_v(x) \, \varphi(\ell_v)
+\]
+of~\eqref{eq:divided} for $k = d - 1$, since $G(x) = (d-1)! \int_P
+\scal{x}{t}^{-d} \, \dd t_1 \cdots \dd t_k$ by~\eqref{eq:G-feynman}; on the
+interval $\scal{x}{P} \subset (0, \infty)$, $1/u$ coincides with a function
+of class $C^k$ on $\R$. Logarithms occur only when $\sigma - \max_{\beta \in
+S} |\beta| \leq 0$. As in Remark~\ref{rem:singular}, the terms of
+Theorem~\ref{thm:G} have poles on the hyperplanes $\scal{x}{g} = 0$, which
+cancel in the sum.
+
+\subsection{The error bound}
+
+The integral $\int_\Delta G$ is computed by the cubature rule of
+Section~\ref{sec:approximation}, the values $G(x_\nu)$ being given by
+Theorem~\ref{thm:G}, and~\eqref{eq:positive} still holds. Assume $N \geq D$,
+and let
+\[
+  p(x) = \sum_{n=0}^{D} q_n \frac{(d+n-1)!}{n!} \, x_s^n \int_P \Phi(L(t))
+  \, \psi(t)^n \sum_{m \leq N - n} c^{(d+n)}_m T_m\Bigl(
+  \frac{\scal{x}{t - \one}}{\eta} \Bigr) \, \dd t_1 \cdots \dd t_k.
+\]
+Since $x \mapsto \scal{x}{t - \one}$ is linear, $p$ is a polynomial of
+degree at most $N$ in $x$. Comparing with~\eqref{eq:G-feynman}, $x_s \leq
+1$ and~\eqref{eq:positive} give the following bound.
+
+\begin{theorem}\label{thm:bound}
+With $\Psi = \sup_P |\psi|$,
+\[
+  \Bigl| \mathcal{Q}(G) - \int_\Delta G \Bigr|
+  \leq 2 \vol(P) \, \sup_P |\Phi(L(t))| \sum_{n=0}^{D} |q_n|
+    \binom{d + n - 1}{n} \Psi^n \, E^{(d+n)}_{N-n}.
+\]
+\end{theorem}
+
+Multiplied by $\kappa$, this bounds the error on $I(P)$. For $W = 1$ and
+$\sigma = 0$, it is Theorem~\ref{thm:bound0}.
+
+\section{Implementation}
+\label{sec:implementation}
+
+\subsection{Triangulation of the tangent cones}
+
+The package triangulates each tangent cone $K_v$ by pulling its rays: the
+first ray, in a fixed order, is joined to the triangulations of the facets
+of the cone which do not contain it, recursively. This construction goes
+back to Hudson~\cite[Lemma~1.4]{Hudson}; it introduces no new rays, and is
+computed in exact integer arithmetic. As a check of the cones, the volume
+of $P$ is the term of degree $0$ in $z$ of the right-hand side of
+Theorem~\ref{thm:brion} at $y = z \lambda$, for an integer vector $\lambda$
+outside the hyperplanes $\scal{\lambda}{g} = 0$, whose terms of negative
+degree in $z$ cancel. This is Brion's formula for the
+volume~\cite[\S3.2, Corollaire~2]{Brion}. Lawrence~\cite{Lawrence} gave a
+formula of this kind for simple polytopes, derived from Gram's relation.
+
+\subsection{The coefficients \texorpdfstring{$Y^C$}{Y\^{}C}}
+\label{sec:coefficients}
+
+The coefficients $Y^C$ are computed by multiplying by the factors $(1 -
+u_g)^{-1}$, $u_g = \sum_f \zeta_f \alpha_{f,g} + \xi \alpha_{\psi,g}$, one
+ray after the other, in the truncation to the exponents $(\beta, l) \in S
+\times \{0, \ldots, D\}$. Since this set is closed under taking smaller
+exponents, the truncation is consistent, and $Y' = (1 - u)^{-1} Y$, that is
+$Y' = Y + u Y'$, is computed in place by
+\[
+  Y_{\beta,l} \leftarrow Y_{\beta,l} + \sum_f \alpha_{f,g} \,
+  Y_{\beta - e_f, l} + \alpha_{\psi,g} \, Y_{\beta, l - 1},
+\]
+for $(\beta, l)$ in increasing order, where $e_f$ is the $f$-th unit
+exponent, the terms whose index leaves the set being omitted.
+
+\subsection{The cubature rule}
+\label{sec:rule}
+
+The map
+\[
+  x_i = u_i \prod_{i' < i} (1 - u_{i'}) \quad (1 \leq i \leq d - 1), \qquad
+  x_d = \prod_{i \leq d - 1} (1 - u_i)
+\]
+sends $[0, 1]^{d-1}$ onto $\Delta$, with Jacobian $\prod_{i \leq d-1} (1 -
+u_i)^{d - 1 - i}$. Stroud's conical product rule~\cite[Section~2.4]{Stroud}
+takes, in the direction $u_i$, the $m_i$-point Gauss rule on $[0, 1]$ for
+the weight $(1 - u)^{d-1-i}$; its weights are positive, its total weight is
+$1/(d-1)!$, and it is exact on the polynomials of degree at most $\min_i
+(2 m_i - 1)$ on $\Delta$. The degree $N$ thus requires $m_i \geq \lceil (N +
+1)/2 \rceil$.
+
+The nodes of the $m$-point Gauss rule for the weight $(1 - u)^a$ are the
+roots of $\pi_m(u) = P^{(a,0)}_m(2u - 1)$, a Jacobi polynomial, and its
+weights are $1/(u (1 - u) \pi_m'(u)^2)$: these are the weights
+of~\cite[(2.7.8)]{DavisRabinowitz}, rewritten
+with~\cite[(8.961.2--3)]{GradshteynRyzhik} in the variable $u \in [0, 1]$
+instead of $2u - 1 \in [-1, 1]$. Each node is enclosed in a ball across
+which $\pi_m$ changes sign, and the weights are computed in ball arithmetic.
+
+Near the hyperplanes $\scal{x}{g} = 0$ of Remark~\ref{rem:singular}, the
+sum of Theorem~\ref{thm:G} cancels heavily, and ball arithmetic loses
+precision. A node of the rule lies exactly on such a hyperplane when, for
+instance, an edge of $P$ is parallel to $e_i - e_j$ (in the rescaled
+coordinates: an edge of the original polytope along $e_i - e_j$, with $\mu_i
+= \mu_j$) and the rule has a node with $x_i = x_j$. For the last two
+coordinates of the map above, this happens at the middle node of a
+Gauss--Legendre rule with an odd number of points. The coordinates of
+$\Delta$ may be permuted, and the numbers of points $m_i$ chosen per
+direction, which gives other positive rules of the same degree; this is how
+such nodes are avoided.
+
+\subsection{Pieces and degree}
+\label{sec:pieces}
+
+The degree $N$ needed for an error $b$ grows like $\log(1/b) /
+\log(1/\tau)$, and $\tau \approx \eta/2$ for small $\eta$. The polytope is
+therefore cut into pieces along the grid of the coordinates $t_j = t_j^{-}
+\theta_n$, where $t_j^{-}$ is the least value of $t_j$ and $\theta_n$ is a
+dyadic approximation of $\theta^n$ for a ratio $\theta > 1$; on each piece,
+$\delta_j \leq (\theta - 1)/(\theta + 1)$ approximately. Fewer, larger
+pieces need a higher degree, and the rule of degree $N$ on $\Delta$ has
+about $(N/2)^{d-1}$ nodes, so the ratio $\theta$ balances the number of
+pieces against the cost of each. The choice of a rational $\tau$ in
+Section~\ref{sec:approximation}, instead of $\eta = \delta$, keeps the
+arithmetic of the tails $E^{(e)}_M$ exact, at the cost of a slightly slower
+decay.
+
+\subsection{The budget of a piece}
+\label{sec:budget}
+
+Each piece is given an error of at most $b$:
+\begin{itemize}
+\item at most $b(1 - \frac1{16} - \frac1{64})$ for the truncation bound of
+  Theorem~\ref{thm:bound}, which determines $N$;
+\item at most $b/16$ for the Chebyshev coefficients of $\rho$ and $B$
+  which are dropped, multiplied by the supremum of the rest of the
+  integrand; the radii of the coefficients, which come from the computation
+  of $\rho$ and $B$, are added on top in the same way;
+\item a target of $b/64$ for the radii of the values of $\mathcal{Q}(G)$:
+  a node whose value is wider is computed again at a higher precision.
+\end{itemize}
+A piece whose trivial bound $\kappa \vol(P) \sup_P |W| / \min_P (t_1
+\cdots t_d)$ is below $2^{-10} b$ is replaced by that bound.
+
+All the computations at the nodes are made in the ball arithmetic of
+Arb~\cite{Arb}, the data of the polytope and of the weight being exact
+rationals, so that $\mathcal{Q}(G)$ is computed with a rigorous radius, to
+which the bound of Theorem~\ref{thm:bound} and the budget above are added.
+
+\begin{thebibliography}{99}
+
+\bibitem{BaldoniEtAl}
+V.~Baldoni, N.~Berline, J.~A.~De~Loera, M.~K\"oppe and M.~Vergne,
+\emph{How to integrate a polynomial over a simplex},
+Math.\ Comp.\ \textbf{80} (2011), no.~273, 297--325.
+
+\bibitem{deBoor}
+C.~de~Boor,
+\emph{Divided differences},
+Surv.\ Approx.\ Theory \textbf{1} (2005), 46--69.
+
+\bibitem{Brion}
+M.~Brion,
+\emph{Points entiers dans les poly\`edres convexes},
+Ann.\ Sci.\ \'Ecole Norm.\ Sup.\ (4) \textbf{21} (1988), no.~4, 653--663.
+
+\bibitem{BGPS}
+J.~I.~Burgos~Gil, P.~Philippon and M.~Sombra,
+\emph{Arithmetic geometry of toric varieties. Metrics, measures and
+heights},
+Ast\'erisque \textbf{360} (2014).
+
+\bibitem{DavisRabinowitz}
+P.~J.~Davis and P.~Rabinowitz,
+\emph{Numerical integration},
+Blaisdell, Waltham, 1967.
+
+\bibitem{DeLoeraEtAl}
+J.~A.~De~Loera, B.~Dutra, M.~K\"oppe, S.~Moreinis, G.~Pinto and J.~Wu,
+\emph{Software for exact integration of polynomials over polyhedra},
+Comput.\ Geom.\ \textbf{46} (2013), no.~3, 232--252.
+
+\bibitem{DM}
+S.~Drappeau and A.~Mounier,
+\emph{Computing sieve integrals using LattE, and the density of integers
+with a localized divisor},
+preprint, arXiv:2606.30428.
+
+\bibitem{Engel}
+K.~Engel,
+\emph{Integration over facet-simple polytopes},
+Beitr.\ Algebra Geom.\ \textbf{66} (2025), 391--403.
+
+\bibitem{Feynman}
+R.~P.~Feynman,
+\emph{Space-time approach to quantum electrodynamics},
+Phys.\ Rev.\ \textbf{76} (1949), no.~6, 769--789.
+
+\bibitem{GradshteynRyzhik}
+I.~S.~Gradshteyn and I.~M.~Ryzhik,
+\emph{Table of integrals, series, and products}, 7th edition,
+Academic Press, 2007.
+
+\bibitem{Hudson}
+J.~F.~P.~Hudson,
+\emph{Piecewise linear topology},
+W.~A.~Benjamin, New York, 1969.
+
+\bibitem{Arb}
+F.~Johansson,
+\emph{Arb: efficient arbitrary-precision midpoint-radius interval
+arithmetic},
+IEEE Trans.\ Comput.\ \textbf{66} (2017), no.~8, 1281--1292.
+
+\bibitem{Lawrence}
+J.~Lawrence,
+\emph{Polytope volume computation},
+Math.\ Comp.\ \textbf{57} (1991), no.~195, 259--271.
+
+\bibitem{Peterson}
+C.~Peterson,
+\emph{A degenerate version of Brion's formula},
+preprint, arXiv:2409.09544.
+
+\bibitem{Stroud}
+A.~H.~Stroud,
+\emph{Approximate calculation of multiple integrals},
+Prentice-Hall, Englewood Cliffs, 1971.
+
+\bibitem{Trefethen}
+L.~N.~Trefethen,
+\emph{Approximation theory and approximation practice},
+SIAM, Philadelphia, 2013.
+
+\end{thebibliography}
+
+\end{document}
