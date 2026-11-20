@@ -19,3 +19,5 @@ import sage.all  # noqa: F401  (Sage must be initialised before its modules)
 from ._brion_sum_loader import load_brion_sum
 
 brion_sum = load_brion_sum()
+
+from .api import sieve_integral  # noqa: E402

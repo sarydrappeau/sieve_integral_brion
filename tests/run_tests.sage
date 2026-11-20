@@ -92,7 +92,7 @@ def main(argv):
     parser.add_argument("--long", action="store_true", help="add the long tests")
     parser.add_argument("--list", action="store_true", help="list and exit")
     parser.add_argument("--time", metavar="OUT.json", help="record the times")
-    parser.add_argument("--repeat", type=int, default=1,
+    parser.add_argument("--repeat", type=int, default=int(1),
                         help="runs per test, median kept")
     args = parser.parse_args(argv)
     names = select(args.patterns, args.long)

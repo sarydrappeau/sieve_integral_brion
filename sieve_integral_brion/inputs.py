@@ -1,9 +1,10 @@
 r"""
 Reading a polytope: constraints given by symbolic inequalities, and
-checks that the polytopes satisfies the necessary hypotheses for the
+checks that the polytope satisfies the necessary hypotheses for the
 method to work.
 
-The functions are those of the ``sieve_integral`` library (``code/sieve_integral.py``).
+The functions are those of the ``sieve_integral`` library
+(``code/sieve_integral.py``), except :func:`as_polytope`.
 
 EXAMPLES::
 
@@ -18,17 +19,20 @@ AUTHORS:
 
 AI DISCLOSURE:
 
-As for ``sieve_integral.py``; Claude Opus 5.5 copied the functions here.
+As for ``sieve_integral.py``; Claude Opus 5.5 copied the functions here,
+and wrote :func:`as_polytope`.
 """
 from operator import le, ge, lt, gt, eq
 
+from sage.geometry.polyhedron.constructor import Polyhedron
 from sage.rings.rational_field import QQ
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 from sage.geometry.polyhedron.base import Polyhedron_base
 from sage.symbolic.expression import Expression
 
 __all__ = ["expression_to_polynomial", "polynomial_to_equation", "symbolic_to_eqns",
-           "eqn_sum_one", "is_polytope_on_sum1", "check_positive_orthant"]
+           "eqn_sum_one", "is_polytope_on_sum1", "check_positive_orthant",
+           "as_polytope"]
 
 
 def expression_to_polynomial(expression, variables):
@@ -365,3 +369,33 @@ def check_positive_orthant(polytope):
                 "which is a hypothesis of the method, but its coordinate "
                 f"number {j} goes down to {lower_bound}."
             )
+
+
+def as_polytope(polytope_data):
+    r"""
+    Return the polytope described by ``polytope_data``, over ``QQ``, and its
+    variables.
+
+    INPUT:
+
+    - ``polytope_data`` -- a polytope, or an iterable of symbolic linear
+      equalities and inequalities (:func:`symbolic_to_eqns`).
+
+    OUTPUT: a pair: the polytope, and the variables of the coordinates, sorted
+    by name, or ``None`` if ``polytope_data`` is a polytope.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.inputs import as_polytope
+        sage: u, v = var("u, v")
+        sage: polytope, variables = as_polytope([u + v == 1, 1/4 < u, u < v])
+        sage: sorted(polytope.vertices_list()), variables
+        ([[1/4, 3/4], [1/2, 1/2]], [u, v])
+        sage: polytope, variables = as_polytope(polytopes.hypercube(2))
+        sage: polytope.base_ring(), variables
+        (Rational Field, None)
+    """
+    if isinstance(polytope_data, Polyhedron_base):
+        return Polyhedron(polytope_data, base_ring=QQ), None
+    eqns, ieqs, variables = symbolic_to_eqns(polytope_data)
+    return Polyhedron(ieqs=ieqs, eqns=eqns, base_ring=QQ), variables
