@@ -29,6 +29,7 @@ from .inputs import (as_polytope, check_positive_orthant, is_polytope_on_sum1,
                      parse_polynomial, variable_indices)
 from .integrand import ChebyshevAffineFactor, ChebyshevRatioFactor, Integrand
 from .pieces import PLAIN, Trivial, prepare_piece
+from .segments import closed_form_integral
 
 # B is computed with these bits above the precision, to mitigate the error loss
 # coming from its coefficients
@@ -40,8 +41,8 @@ def integrate_polytope(polytope, border, integrand, precision, field, verbose=0,
     r"""
     Return a ball of ``field`` containing the integral of ``integrand``
     over ``polytope``, taken as one piece of budget `2^{-p}`, `p` being
-    ``precision``; ``name`` heads the lines printed if ``verbose`` is
-    positive.
+    ``precision`` (or in closed form if its dimension is at most `1`);
+    if ``verbose`` is positive, ``name`` is prepended to the printed lines.
 
     EXAMPLES:
 
@@ -55,6 +56,10 @@ def integrate_polytope(polytope, border, integrand, precision, field, verbose=0,
         sage: value.contains_exact(1), value.rad() < 2^-20
         (True, True)
     """
+    if polytope.ambient_dimension() - border <= 1:
+        if verbose > 0:
+            print(f"{name}: in closed form")
+        return closed_form_integral(polytope, border, integrand, precision, field)
     piece = prepare_piece(polytope, border, precision, integrand)
     if verbose > 0:
         if isinstance(piece, Trivial):
@@ -82,9 +87,6 @@ def weighted_polytope(polytope_data, facteur):
     if polytope.is_empty():
         return polytope, variables, None
     check_positive_orthant(polytope)
-    # Small dimension exclusion -- to be patched later.
-    if polytope.ambient_dimension() < 2:
-        raise NotImplementedError("with a weight, the ambient dimension must be 2 at least")
     return polytope, variables, is_polytope_on_sum1(polytope)
 
 
@@ -181,11 +183,11 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
     dt_k/(t_1 \cdots t_d)`, where `B(u) = u \omega(u)`, `\omega` being
     Buchstab's function, and `F` is a polynomial.
 
-    The polytope `P \subset \RR_{>0}^d`, `d \geq 2`, is either
-    full-dimensional (`k = d`), or on the hyperplane `\sum_j t_j = 1` (`k =
-    d - 1`). It is cut by the intervals `[n, n + 1]` of `t_r/t_s` on which
-    `B` is a Chebyshev series (computed ``BUCHSTAB_EXTRA_BITS`` bits above
-    the precision).
+    The polytope `P \subset \RR_{>0}^d` is either full-dimensional (`k =
+    d`), or on the hyperplane `\sum_j t_j = 1` (`k = d - 1`). It is cut by
+    the intervals `[n, n + 1]` of `t_r/t_s` on which `B` is a Chebyshev
+    series (computed ``BUCHSTAB_EXTRA_BITS`` bits above the precision). If
+    `k \leq 1`, the integral is in closed form.
 
     INPUT:
 
@@ -292,9 +294,9 @@ def sieve_integral_factors(polytope_data, factors, polynomial=None, precision=20
     are Chebyshev series and the `L_f` affine forms. The forms are assumed
     to take values in `[-1, 1]` on `P`.
 
-    The polytope `P \subset \RR_{>0}^d`, `d \geq 2`, is either
-    full-dimensional (`k = d`), or on the hyperplane `\sum_j t_j = 1` (`k =
-    d - 1`), and is taken as one piece.
+    The polytope `P \subset \RR_{>0}^d` is either full-dimensional (`k =
+    d`), or on the hyperplane `\sum_j t_j = 1` (`k = d - 1`), and is taken
+    as one piece, or the integral is in closed form if `k \leq 1`.
 
     INPUT:
 

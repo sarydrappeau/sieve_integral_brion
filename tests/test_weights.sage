@@ -3,8 +3,9 @@ Check sieve_integral_harman and sieve_integral_factors, without cutting, on
 integrals of closed form or given by one-dimensional integrals in Arb:
 polynomials `F` of degree up to 3, full-dimensional or on `\sum_j t_j = 1`,
 one and two Chebyshev factors, and Harman's factor `B(t_r/t_s)`. Check also
-their inputs, and that the truncation bound with a weight holds against a
-rule of higher degree on random pieces.
+their inputs, the closed forms in dimension `k \leq 1`, and that the
+truncation bound with a weight holds against a rule of higher degree on
+random pieces.
 """
 import random
 
@@ -121,10 +122,47 @@ def test_weights_inputs():
                     "two elements")
     weights_rejects(harman, (box, (1, 0), 1 + x), {}, ValueError, "symbolic integrand")
     weights_rejects(harman, (box, (1, 0)), {"facteur": 1.3}, NotImplementedError, "facteur")
-    weights_rejects(harman, (Polyhedron([(1,), (2,)]), None), {}, NotImplementedError,
-                    "dimension")
     weights_rejects(factors, (box, [([1], (-4, 1, 0))]), {}, ValueError, "leaves [-1, 1]")
     weights_rejects(factors, (box, [([1], (0, 1))]), {}, ValueError, "3 coefficients")
+
+
+def test_weights_low_dimension():
+    # k <= 1, in closed form: intervals of RR, the point t_1 = 1, and
+    # segments of t_1 + t_2 = 1
+    R = WEIGHTS_FIELD
+    harman = weights_api.sieve_integral_harman
+    factors = weights_api.sieve_integral_factors
+    t = PolynomialRing(QQ, "x", 1).gen()
+    interval = Polyhedron([(1,), (3,)])
+    weights_check(harman(interval, None, precision=50), R(3).log(), 50, "[1, 3]")
+    weights_check(factors(interval, [([0, 0, 1], (-2, 1))], 1 + t, precision=50),
+                  -26/3 + 7 * R(3).log(), 50, "[1, 3], (1 + t) T_2(t - 2)")
+    weights_check(factors(Polyhedron([(1,)]), [([0, 1], (-1/2, 1))], 2 + t, precision=50),
+                  R(3/2), 50, "t_1 = 1, (2 + t) T_1(t - 1/2)")
+    weights_rejects(factors, (interval, [([1], (-1, 1))]), {}, ValueError, "leaves [-1, 1]")
+    x, y = var("x, y")
+    weights_check(factors([x + y == 1, 1/4 < x, x < 1/2], [([0, 1], (-1, 4, 0))], x * y,
+                          precision=50), R(1/8), 50, "segment, x y T_1(4 x - 1)")
+    # B(x/y), the divisor being t_2 = 1 - t_1: Harman's example, x and y
+    # exchanged
+    expected = (weights_integral(lambda t: (1 + t) / (t * (1 - t)), 1/3, 1/2)
+                + weights_integral(lambda t: (1 + (1/t - 2).log()) * (1 + t) / (t * (1 - t)),
+                                   1/4, 1/3))
+    weights_check(harman([x + y == 1, 1/4 < y, y < x], (x, y), 1 + y, precision=50),
+                  expected, 50, "harman, x and y exchanged", parts=2)
+    # against the rule, where B(t_2/t_1) = 1 + log(t_2/t_1 - 1), on [2, 3]
+    B = weights_dde.BuchstabB(precision=60, expansion="chebyshev")
+    on_2_3 = B.chebyshev_approximants_list()[2][2]
+    t1, t2 = PolynomialRing(QQ, "x", 2).gens()
+    part = Polyhedron(eqns=[(-1, 1, 1)], ieqs=[(-1/4, 1, 0), (1/3, -1, 0)])
+    integrand = weights_integrand.Integrand(
+        1 + t1, ratio=weights_integrand.ChebyshevRatioFactor(tuple(on_2_3), (0, -5, 2), 0))
+    field = RealBallField(50)
+    closed = weights_api.integrate_polytope(part, True, integrand, 50, field)
+    ruled = weights_evaluate.evaluate_piece(
+        weights_pieces.prepare_piece(part, True, 50, integrand), field)
+    check_overlap(closed, ruled, "closed form against the rule")
+    assert closed.rad() < 2^-48, closed
 
 
 def test_weights_bound_audit():
@@ -167,5 +205,6 @@ TESTS = {
     "weights/harman": (test_weights_harman, ("quick",)),
     "weights/factors": (test_weights_factors, ("quick",)),
     "weights/inputs": (test_weights_inputs, ("quick",)),
+    "weights/low-dimension": (test_weights_low_dimension, ("quick",)),
     "weights/bound-audit": (test_weights_bound_audit, ("quick",)),
 }

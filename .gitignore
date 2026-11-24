@@ -16,3 +16,6 @@ __pycache__/
 mathematics/*.aux
 mathematics/*.log
 mathematics/*.out
+
+# emacs temporary files
+*.*~
