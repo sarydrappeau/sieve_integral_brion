@@ -3,11 +3,14 @@ Preparation of a piece of a polytope for the radial Brion sum: rescaling
 of its coordinates, data of its weight, degree of the rule and bound on its
 error (or its trivial bound).
 
-The coordinates of the piece `P` are divided by the centres `c_j = (t_j^-
-+ t_j^+)/2` of their ranges `[t_j^-, t_j^+]` on `P`, so that `t_j \in [1 -
-\rho_j, 1 + \rho_j]` on the rescaled piece `P'`, with `\rho_j = (t_j^+ -
-t_j^-)/(t_j^+ + t_j^-)`. The integral of `W(t) dt_1 \cdots dt_k/(t_1 \cdots
-t_d)` over `P` is then `\kappa \int_\Delta G`, where `\kappa = 1` if `P` is
+The coordinates of the piece `P` are divided by the centres `c_j =
+(t_j^- + t_j^+)/2` of their ranges `[t_j^-, t_j^+]` on `P`, so that
+`t_j \in [1 - \rho_j, 1 + \rho_j]` on the rescaled piece `P'`, with
+`\rho_j = (t_j^+ - t_j^-)/(t_j^+ + t_j^-)`. During the treatment of
+singular nodes, it may also be rescaled around other centres `c_j \in
+(t_j^-, t_j^+)`, in which case `\rho_j = \max(t_j^+ - c_j, c_j -
+t_j^-)/c_j`. The integral of `W(t) dt_1 \cdots dt_k/(t_1 \cdots t_d)`
+over `P` is then `\kappa \int_\Delta G`, where `\kappa = 1` if `P` is
 full-dimensional and `\kappa = 1/c_d` if it lies on `\sum_j t_j = 1`
 (Section 3.2 of ``mathematics/radial-brion.pdf``).
 
@@ -52,7 +55,7 @@ product of the centres::
     ((3/20, 5/2, 3/2), 11/64)
     sage: piece.volume == P.volume() / prod(piece.centres)
     True
-    sage: piece.degree == 2 * piece.ms[0] - 1, piece.error <= 59/64 * 2^-30
+    sage: piece.degree == 2 * min(piece.config.ms) - 1, piece.error <= 59/64 * 2^-30
     (True, True)
 
 A thin box is negligible: its trivial bound is `2^{-40}`, and the plain
@@ -87,8 +90,9 @@ from sage.misc.misc_c import prod
 from sage.rings.rational_field import QQ
 
 from .chebyshev import chebyshev_inverse_powers, chebyshev_inverse_rate
-from .geometry import brion_volume, generator_table, vertex_cones
+from .geometry import bad_pairs, brion_volume, generator_table, vertex_cones
 from .integrand import Integrand, recentred_weight, weight_structure
+from .rules import choose_config
 
 # the shares of the requested precision b of a piece: the Chebyshev
 # coefficients truncated off from the weight, and the target for the
@@ -139,7 +143,10 @@ class PreparedPiece:
 
     - ``degree`` -- the degree `N` of the rule.
 
-    - ``ms`` -- the numbers of nodes of the rule in each direction.
+    - ``config`` -- the :class:`~sieve_integral_brion.rules.RuleConfig` of
+      the rule (:func:`~sieve_integral_brion.rules.choose_config`): its
+      order and numbers of nodes. Another configuration with at least as
+      many nodes in each direction keeps the bound ``error``.
 
     - ``error`` -- the bound on the error of `\kappa` times the rule, a
       rational number which is the sum of: the bound coming from
@@ -169,7 +176,7 @@ class PreparedPiece:
     generators: tuple
     cones: tuple
     degree: int
-    ms: tuple
+    config: object
     error: object
     tolerance_exponent: int
     precision: int
@@ -274,7 +281,27 @@ def floor_log2(x):
     return e if QQ(2)**e <= x else e - 1
 
 
-def prepare_piece(polytope, border, precision, integrand=PLAIN):
+def perturbed_centres(polytope, rng):
+    r"""
+    Return the centres of the ranges of the coordinates on ``polytope``,
+    each moved by a random multiple of `1/64` of its half-width, at most
+    `1/16` of it.
+
+    EXAMPLES::
+
+        sage: import random
+        sage: from sieve_integral_brion.pieces import perturbed_centres
+        sage: box = Polyhedron(vertices=[(1, 1), (2, 1), (1, 3), (2, 3)])
+        sage: centres = perturbed_centres(box, random.Random(int(2)))
+        sage: all(abs(c - m) <= h / 16 for c, m, h in zip(centres, (3/2, 2), (1/2, 1)))
+        True
+    """
+    mini, maxi = polytope.bounding_box()
+    return tuple((QQ(a) + QQ(b)) / 2 + (QQ(b) - QQ(a)) / 2 * QQ(rng.randint(-4, 4)) / 64
+                 for a, b in zip(mini, maxi))
+
+
+def prepare_piece(polytope, border, precision, integrand=PLAIN, centres=None):
     r"""
     Return the data of the radial Brion sum of ``integrand`` on
     ``polytope`` and the bound on its error, or its trivial bound if that
@@ -292,6 +319,9 @@ def prepare_piece(polytope, border, precision, integrand=PLAIN):
     - ``integrand`` (default: the plain integrand) -- an
       :class:`~sieve_integral_brion.integrand.Integrand`.
 
+    - ``centres`` (default: the midpoints of the ranges of the coordinates)
+      -- the `c_j`, rational numbers inside these ranges.
+
     OUTPUT: a :class:`PreparedPiece`, or a :class:`Trivial` piece.
 
     EXAMPLES:
@@ -301,7 +331,7 @@ def prepare_piece(polytope, border, precision, integrand=PLAIN):
         sage: from sieve_integral_brion.pieces import prepare_piece
         sage: segment = Polyhedron(vertices=[(1/4, 3/4), (1/2, 1/2)])
         sage: piece = prepare_piece(segment, True, 20)
-        sage: piece.shift, piece.prefactor, piece.generators, len(piece.ms)
+        sage: piece.shift, piece.prefactor, piece.generators, len(piece.config.ms)
         (1, 8/5, ((5, -3),), 1)
 
     With the weight given on `[1, 2]` by `B(u) = R(2u - 3)` (here `R = 1` constant)
@@ -318,8 +348,9 @@ def prepare_piece(polytope, border, precision, integrand=PLAIN):
     d = polytope.ambient_dimension()
     k = d - 1 if border else d
     mini, maxi = polytope.bounding_box()
-    centres = tuple((QQ(a) + QQ(b)) / 2 for a, b in zip(mini, maxi))
-    rhos = [(QQ(b) - QQ(a)) / (QQ(b) + QQ(a)) for a, b in zip(mini, maxi)]
+    if centres is None:
+        centres = tuple((QQ(a) + QQ(b)) / 2 for a, b in zip(mini, maxi))
+    rhos = [max(QQ(b) - c, c - QQ(a)) / c for a, b, c in zip(mini, maxi, centres)]
     prefactor = 1 / centres[-1] if border else QQ(1)
     vertices, cones = vertex_cones(polytope, centres, border)
     volume = brion_volume(vertices, cones, k, check=True)
@@ -339,14 +370,15 @@ def prepare_piece(polytope, border, precision, integrand=PLAIN):
     structure = weight_structure(weight, allowance, vertices, generators)
     weights = tuple(2 * prefactor * volume * structure.bound * w for w in structure.weights)
     N = least_degree(d, rate, weights, SHARE_TRUNCATION * budget)
-    # the rule with m points in each direction is exact in degree 2m - 1
+    # the rule with at least m points in each direction is exact in degree 2m - 1
     m = max(2, (N + 2) // 2)
+    config = choose_config(m, d, bad_pairs(generators))
     # the rule's weights add up to 1/(d - 1)!
     tolerance = SHARE_EVALUATION * budget * factorial(d - 1) / prefactor
     return PreparedPiece(
         centres=centres, shift=d - k, prefactor=prefactor, volume=volume, rate=rate,
         vertices=tuple(vertices), generators=tuple(generators), cones=tuple(indexed),
-        degree=2 * m - 1, ms=(m,) * (d - 1),
+        degree=2 * m - 1, config=config,
         error=truncation_bound(d, rate, 2 * m - 1, weights) + size * structure.loss,
         tolerance_exponent=floor_log2(tolerance), precision=precision, weights=weights,
         exponents=structure.exponents, slopes=structure.slopes,

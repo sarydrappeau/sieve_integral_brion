@@ -1,5 +1,6 @@
 r"""
-Vertex cones of a polytope, and the grids which cut it into pieces.
+Vertex cones of a polytope, the pairs of coordinates along which it has
+edges, and the grids which cut it into pieces.
 
 A polytope `P \subset \RR_{>0}^d` is either full-dimensional (`k = d`), or
 lies on the hyperplane `\sum_j t_j = 1` (`k = d - 1`), where it is measured
@@ -306,6 +307,37 @@ def generator_table(cones):
             pairs.append((position[generator], sign))
         indexed.append((index, tuple(pairs), det))
     return generators, indexed
+
+
+def bad_pairs(generators):
+    r"""
+    Return the pairs `\{i, j\}` of coordinates such that one of
+    ``generators`` is a multiple of `e_i - e_j`, in other words, such
+    that `\langle x, g\rangle = 0` on the hyperplane `x_i = x_j`.
+
+    INPUT:
+
+    - ``generators`` -- primitive integer vectors.
+
+    OUTPUT: a set of frozen sets of two indices.
+
+    EXAMPLES:
+
+    The triangle with vertices `(1, 1)`, `(3, 1)`, `(1, 3)` has the edge
+    `(3, 1)(1, 3)` along `e_1 - e_2`::
+
+        sage: from sieve_integral_brion.geometry import bad_pairs
+        sage: bad_pairs([(1, 0), (0, 1), (1, -1)])
+        {frozenset({0, 1})}
+        sage: bad_pairs([(1, -2, 0), (0, 1, -1), (1, 1, -2)])
+        {frozenset({1, 2})}
+    """
+    pairs = set()
+    for g in generators:
+        support = [j for j, c in enumerate(g) if c]
+        if len(support) == 2 and g[support[0]] == -g[support[1]]:
+            pairs.add(frozenset(support))
+    return pairs
 
 
 def brion_volume(vertices, cones, k, check=False, seed=1):

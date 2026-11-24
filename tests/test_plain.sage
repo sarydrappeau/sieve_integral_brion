@@ -98,17 +98,6 @@ def test_plain_escalation():
     check_overlap(plain_evaluate.evaluate_piece(tight, field),
                   plain_evaluate.evaluate_piece(piece, field), "escalated")
 
-    # the edge e_1 - e_2 (e_i the canonical basis) with equal centres:
-    # <x, g> = 0 at the middle node
-    segment = Polyhedron(vertices=[(1/4, 3/4), (3/4, 1/4)])
-    odd = dataclasses.replace(plain_pieces.prepare_piece(segment, True, 30), ms=(3,))
-    try:
-        plain_evaluate.evaluate_piece(odd, field)
-    except ArithmeticError as exc:
-        assert "[(1,)]" in str(exc), str(exc)
-    else:
-        raise AssertionError("no ArithmeticError for a node on <x, g> = 0")
-
 
 def test_plain_bound_audit():
     # check for stability under rule degree raising
@@ -125,7 +114,9 @@ def test_plain_bound_audit():
                 continue
             low = plain_evaluate.rule_sum(piece, 128)
             # raising the node count by 10 in each direction raises the degree by 20
-            high = plain_evaluate.rule_sum(piece, 128, ms=[m + 10 for m in piece.ms])
+            config = dataclasses.replace(piece.config,
+                                         ms=tuple(m + 10 for m in piece.config.ms))
+            high = plain_evaluate.rule_sum(piece, 128, config)
             high_error = (2 * piece.prefactor * piece.volume
                           * plain_pieces.truncation_bound(d, piece.rate, piece.degree + 20, [1]))
             difference = abs(low - high).lower()

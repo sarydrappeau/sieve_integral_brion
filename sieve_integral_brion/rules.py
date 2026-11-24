@@ -21,6 +21,12 @@ Nodes and weights are balls. Each node is certified to contain one root of the
 Jacobi polynomial by a change of sign, or by Sage's exact root isolation
 (``real_roots``).
 
+The rule may be applied to a simplex with permuted coordinates (that's
+one of the ways we make the nodes avoid singularities in the functions
+:func:`choose_config` and :func:`next_config`). A :class:`RuleConfig`
+records the permutation of coordinates, and the numbers of points
+`m_i` in each direction.
+
 EXAMPLES::
 
     sage: from sieve_integral_brion.rules import conical_rule
@@ -49,6 +55,7 @@ Claude Opus 5.5 wrote this module, from a prototype it had written for the
 ``sieve_integral`` library.
 """
 import itertools
+from dataclasses import dataclass
 from functools import lru_cache
 
 from sage.arith.misc import binomial
@@ -227,3 +234,117 @@ def conical_rule(ms, prec, order=None):
             node[coordinate] = x[i]
         rule.append((tuple(node), weight))
     return rule
+
+
+@dataclass(frozen=True)
+class RuleConfig:
+    r"""
+    A configuration of the conical product rule on the simplex of `\RR^d`:
+    the permutation ``order`` of ``range(d)`` and the `d - 1` numbers of
+    nodes ``ms``, as in :func:`conical_rule`.
+    """
+    order: tuple
+    ms: tuple
+
+
+def choose_config(m, d, bad=()):
+    r"""
+    Return a :class:`RuleConfig` on the simplex of `\RR^d` with at least
+    ``m`` nodes in each direction, whose nodes avoid the hyperplanes `x_i =
+    x_j`, `\{i, j\}` in ``bad``.
+
+    In the direction `u_i`, `i < d - 1`, the number of nodes is the least
+    `m_i \geq m` whose Jacobi polynomial has no rational root. In the last
+    direction, an odd number of nodes produces the node `u_{d-1} = 1/2`, at
+    which the two coordinates that this direction fills (`x_{d-1}` and `x_d`
+    of the map above, that is the coordinates ``order[d - 2]`` and
+    ``order[d - 1]`` of the node) are equal. In this situation we first try
+    to permute order to put in those positions a pair `\{i, j\}` not in
+    ``bad``, the identity's own pair `\{d - 2, d - 1\}` if possible.
+    If every pair is in ``bad``, the last direction gets `m + 1` nodes
+    instead (this however tends to raise the computation time, which is why
+    we do it as second line only).
+
+    INPUT:
+
+    - ``m`` -- a positive integer.
+
+    - ``d`` -- an integer at least `2`.
+
+    - ``bad`` (default: none) -- a collection of frozen sets of two
+      coordinates (:func:`~sieve_integral_brion.geometry.bad_pairs`).
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.rules import choose_config
+        sage: choose_config(3, 3)
+        RuleConfig(order=(0, 1, 2), ms=(3, 3))
+        sage: choose_config(3, 3, {frozenset({1, 2})})
+        RuleConfig(order=(1, 0, 2), ms=(3, 3))
+        sage: choose_config(3, 2, {frozenset({0, 1})})
+        RuleConfig(order=(0, 1), ms=(4,))
+
+    The Jacobi polynomial of `m = 2` points for the weight `(1 - u)^6` has
+    the roots `1/15` and `1/3`::
+
+        sage: choose_config(2, 9).ms
+        (2, 3, 2, 2, 2, 2, 2, 2)
+    """
+    k = d - 1
+    ms = []
+    for i in range(k - 1):
+        n = m
+        while jacobi_rational_roots(n, k - 1 - i):
+            n += 1
+        ms.append(n)
+    order = tuple(range(d))
+    last = m
+    if m % 2:
+        good = next(((i, j) for j in reversed(range(d)) for i in reversed(range(j))
+                     if frozenset((i, j)) not in bad), None)
+        if good is None:
+            last = m + 1
+        else:
+            order = tuple(c for c in order if c not in good) + good
+    ms.append(last)
+    return RuleConfig(order, tuple(ms))
+
+
+def next_config(config, attempt, bad, rng):
+    r"""
+    Return the configuration of the rule for the attempt ``attempt``,
+    following ``config``: for the attempt `1`, one more node in the last
+    direction; for the attempt `2`, a random order. If the last direction
+    then has an odd number of nodes, and the last two coordinates are in
+    ``bad``, it gets one more.
+
+    INPUT:
+
+    - ``config`` -- a :class:`RuleConfig`.
+
+    - ``attempt`` -- `1` or `2`.
+
+    - ``bad`` -- as in :func:`choose_config`.
+
+    - ``rng`` -- a ``random.Random`` instance, for the order.
+
+    EXAMPLES::
+
+        sage: import random
+        sage: from sieve_integral_brion.rules import RuleConfig, next_config
+        sage: bad = {frozenset({1, 2})}
+        sage: next_config(RuleConfig((1, 0, 2), (3, 3)), 1, bad, random.Random(int(1)))
+        RuleConfig(order=(1, 0, 2), ms=(3, 4))
+        sage: next_config(RuleConfig((0, 1, 2), (3, 4)), 1, bad, random.Random(int(1)))
+        RuleConfig(order=(0, 1, 2), ms=(3, 6))
+        sage: sorted(next_config(RuleConfig((0, 1, 2), (3, 4)), 2, bad, random.Random(int(1))).order)
+        [0, 1, 2]
+    """
+    order, ms = list(config.order), list(config.ms)
+    if attempt == 1:
+        ms[-1] += 1
+    else:
+        rng.shuffle(order)
+    if ms[-1] % 2 and frozenset(order[-2:]) in bad:
+        ms[-1] += 1
+    return RuleConfig(tuple(order), tuple(ms))

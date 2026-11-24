@@ -7,6 +7,7 @@ their inputs, the closed forms in dimension `k \leq 1`, and that the
 truncation bound with a weight holds against a rule of higher degree on
 random pieces.
 """
+import dataclasses
 import random
 
 from sieve_integral_brion import (api as weights_api, dde as weights_dde,
@@ -190,7 +191,9 @@ def test_weights_bound_audit():
             if isinstance(piece, weights_pieces.Trivial):
                 continue
             low_sum = weights_evaluate.rule_sum(piece, 128)
-            high_sum = weights_evaluate.rule_sum(piece, 128, ms=[m + 10 for m in piece.ms])
+            config = dataclasses.replace(piece.config,
+                                         ms=tuple(m + 10 for m in piece.config.ms))
+            high_sum = weights_evaluate.rule_sum(piece, 128, config)
             bounds = [weights_pieces.truncation_bound(d, piece.rate, N, piece.weights)
                       for N in (piece.degree, piece.degree + 20)]
             difference = abs(low_sum - high_sum).lower()

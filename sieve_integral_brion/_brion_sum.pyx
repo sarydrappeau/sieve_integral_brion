@@ -53,7 +53,9 @@ come from the in-place recurrence `Y_{\beta, l} \mathrel{+}= \sum_f
 increasing order of `(\beta, l)`, for each ray `g` of `C`.
 
 When a node gives a non-finite value, or a radius above a tolerance, it is
-left out of the sum and returned to be computed again at a higher precision.
+left out of the sum and returned to be computed again at a higher precision;
+:meth:`BrionSum.zero_generators` lists the hyperplanes `\langle x, g\rangle
+= 0` which may hold at it.
 
 EXAMPLES:
 
@@ -693,3 +695,52 @@ cdef class BrionSum:
             arb_clear(total)
             PyMem_Free(index)
         return result, failed
+
+    def zero_generators(self, multi):
+        r"""
+        Return the indices of the generators `g` with `\langle x, g\rangle = 0`
+        (meaning that the dot product -- an arb ball -- contains `0`),
+        for `x` the node at multi-index ``multi``.
+
+        EXAMPLES:
+
+        On the segment of `t_1 + t_2 = 1` from `(1/4, 3/4)` to `(3/4, 1/4)`,
+        whose centres are equal, the middle node of three has `x_1 = x_2`::
+
+            sage: from sieve_integral_brion._brion_sum import BrionSum
+            sage: from sieve_integral_brion.geometry import vertex_cones, generator_table
+            sage: from sieve_integral_brion.rules import conical_factors
+            sage: segment = Polyhedron(vertices=[(1/4, 3/4), (3/4, 1/4)])
+            sage: vertices, cones = vertex_cones(segment, (1/2, 1/2), True)
+            sage: generators, cones = generator_table(cones)
+            sage: brion_sum = BrionSum(64, conical_factors([3], 64), vertices,
+            ....:                      generators, cones, 1)
+            sage: generators, [brion_sum.zero_generators((i,)) for i in range(3)]
+            ([(1, -1)], [[], [0], []])
+        """
+        cdef slong i, g
+        cdef long *index
+        cdef arb_t weight
+        if len(multi) != self.k:
+            raise ValueError(f"{multi} is not a multi-index of the rule")
+        for i in range(self.k):
+            if not 0 <= multi[i] < self.msize[i]:
+                raise ValueError(f"{multi} is not a multi-index of the rule")
+        index = <long *> PyMem_Malloc(self.k * sizeof(long))
+        if index == NULL:
+            raise MemoryError
+        arb_init(weight)
+        zeros = []
+        try:
+            for i in range(self.k):
+                index[i] = multi[i]
+            self._point(index, weight)
+            for g in range(self.ngen):
+                arb_dot(self.a + g, NULL, 0, self.x, 1, self.generators + g * self.d, 1,
+                        self.d, self.prec)
+                if arb_contains_zero(self.a + g):
+                    zeros.append(g)
+        finally:
+            arb_clear(weight)
+            PyMem_Free(index)
+        return zeros

@@ -24,7 +24,7 @@ from sage.rings.rational_field import QQ
 from sage.rings.real_arb import RealBallField
 
 from .dde import BuchstabB
-from .evaluate import counts, evaluate_piece
+from .evaluate import counts, integrate_piece
 from .inputs import (as_polytope, check_positive_orthant, is_polytope_on_sum1,
                      parse_polynomial, variable_indices)
 from .integrand import ChebyshevAffineFactor, ChebyshevRatioFactor, Integrand
@@ -65,12 +65,15 @@ def integrate_polytope(polytope, border, integrand, precision, field, verbose=0,
         if isinstance(piece, Trivial):
             print(f"{name}: the trivial bound {float(piece.centre + piece.radius):.3g}")
         else:
-            print(f"{name}: degree {piece.degree}, {prod(piece.ms)} nodes, "
+            print(f"{name}: degree {piece.degree}, {prod(piece.config.ms)} nodes, "
                   f"error bound {float(piece.error):.3g}")
-    retried = counts["retried"]
-    value = evaluate_piece(piece, field)
-    if verbose > 0 and counts["retried"] > retried:
-        print(f"{name}: {counts['retried'] - retried} nodes computed again")
+    before = dict(counts)
+    value = integrate_piece(piece, field, polytope, border, integrand)
+    if verbose > 0 and counts["retried"] > before["retried"]:
+        print(f"{name}: {counts['retried'] - before['retried']} nodes computed again")
+    if verbose > 0 and counts["reconfigured"] > before["reconfigured"]:
+        print(f"{name}: {counts['singular'] - before['singular']} singular nodes, "
+              f"{counts['reconfigured'] - before['reconfigured']} reconfigurations")
     return value
 
 
@@ -114,7 +117,8 @@ def sieve_integral(polytope_data, precision=20, facteur=None, processes=None,
 
     - ``verbose`` (default: 0) -- if positive, print the degree of the rule,
       its number of nodes and the error bound, the number of nodes computed
-      again at a higher precision, then the value.
+      again at a higher precision, those of singular nodes and of
+      reconfigurations of the rule, then the value.
 
     - ``engine`` (default: ``None``) -- ignored for now.
 
@@ -209,8 +213,9 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
     - ``facteur``, ``processes``, ``engine`` -- as in :func:`sieve_integral`.
 
     - ``verbose`` (default: 0) -- if positive, print the degree of the rule,
-      its number of nodes and its error bound on each part, and the number
-      of nodes computed again at a higher precision.
+      its number of nodes and its error bound on each part, the number of
+      nodes computed again at a higher precision, and those of singular
+      nodes and of reconfigurations of the rule.
 
     OUTPUT: a ball of ``RealBallField(precision)``.
 
