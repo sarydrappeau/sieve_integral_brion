@@ -1,7 +1,8 @@
 r"""
 Chebyshev expansions with rational coefficients.
 
-The functions are those of the ``sieve_integral`` library (``code/sieve_integral.py``).
+The functions are borrowed from the ``sieve_integral`` library (``code/sieve_integral.py``),
+except :func:`kept_count`, :func:`recentre` and :func:`to_monomial`.
 
 EXAMPLES::
 
@@ -17,7 +18,8 @@ AUTHORS:
 
 AI DISCLOSURE:
 
-As for ``sieve_integral.py``; Claude Opus 5.5 copied the functions here.
+As for ``sieve_integral.py``; Claude Opus 5.5 copied the functions here,
+and wrote :func:`kept_count`, :func:`recentre` and :func:`to_monomial`.
 """
 from sage.rings.rational_field import QQ
 from sage.rings.real_mpfr import RR
@@ -26,7 +28,7 @@ from sage.functions.orthogonal_polys import chebyshev_T
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
 __all__ = ["chebyshev_inverse_rate", "chebyshev_inverse_powers",
-           "chebyshev_affine_composition"]
+           "chebyshev_affine_composition", "kept_count", "recentre", "to_monomial"]
 
 
 def chebyshev_inverse_rate(ratio, bits=12):
@@ -202,3 +204,58 @@ def chebyshev_affine_composition(coefficients, shift, scale):
                 zeta /= 2
             result[i - 2*k] += a * zeta
     return result
+
+
+def kept_count(coefficients, allowance):
+    r"""
+    Return the least `K \geq 1` with `\sum_{n \geq K} |c_n| \leq`
+    ``allowance``, `c` being ``coefficients``, and that sum.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.chebyshev import kept_count
+        sage: kept_count([1, 1/2, 1/8, 1/16], 1/5)
+        (2, 3/16)
+        sage: kept_count([1, 1/2, 1/8, 1/16], 0), kept_count([1/2, 1/4], 1)
+        ((4, 0), (1, 1/4))
+    """
+    tail = QQ(0)
+    K = len(coefficients)
+    while K > 1 and tail + abs(coefficients[K - 1]) <= allowance:
+        tail += abs(coefficients[K - 1])
+        K -= 1
+    return K, tail
+
+
+def recentre(low, high, step=QQ(2)**-12):
+    r"""
+    Return multiples `\mu` and `\lambda > 0` of ``step`` such that `[\mu -
+    \lambda, \mu + \lambda]` contains the interval from ``low`` to ``high``.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.chebyshev import recentre
+        sage: recentre(1/3, 1/2, 1/8)
+        (3/8, 1/8)
+        sage: recentre(1/3, 1/3)
+        (1365/4096, 1/4096)
+    """
+    mu = ((low + high) / 2 / step).round() * step
+    lam = max(step, (max(high - mu, mu - low) / step).ceil() * step)
+    return mu, lam
+
+
+def to_monomial(coefficients):
+    r"""
+    Return `\sum_n c_n T_n(y)`, `c` being ``coefficients``, as a polynomial
+    over ``QQ``.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.chebyshev import to_monomial
+        sage: to_monomial([1, 1/2, 1/4])
+        1/2*y^2 + 1/2*y + 3/4
+    """
+    y = PolynomialRing(QQ, "y").gen()
+    return sum((QQ(c) * chebyshev_T(n, y) for n, c in enumerate(coefficients)),
+               y.parent().zero())

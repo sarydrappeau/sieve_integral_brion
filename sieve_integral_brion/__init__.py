@@ -20,4 +20,4 @@ from ._brion_sum_loader import load_brion_sum
 
 brion_sum = load_brion_sum()
 
-from .api import sieve_integral  # noqa: E402
+from .api import sieve_integral, sieve_integral_factors, sieve_integral_harman  # noqa: E402

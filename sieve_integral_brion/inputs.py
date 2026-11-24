@@ -3,7 +3,7 @@ Reading a polytope: constraints given by symbolic inequalities, and
 checks that the polytope satisfies the necessary hypotheses for the
 method to work.
 
-The functions are those of the ``sieve_integral`` library
+The code is borrowed from the ``sieve_integral`` library
 (``code/sieve_integral.py``), except :func:`as_polytope`.
 
 EXAMPLES::
@@ -32,7 +32,7 @@ from sage.symbolic.expression import Expression
 
 __all__ = ["expression_to_polynomial", "polynomial_to_equation", "symbolic_to_eqns",
            "eqn_sum_one", "is_polytope_on_sum1", "check_positive_orthant",
-           "as_polytope"]
+           "as_polytope", "variable_indices", "parse_polynomial"]
 
 
 def expression_to_polynomial(expression, variables):
@@ -399,3 +399,84 @@ def as_polytope(polytope_data):
         return Polyhedron(polytope_data, base_ring=QQ), None
     eqns, ieqs, variables = symbolic_to_eqns(polytope_data)
     return Polyhedron(ieqs=ieqs, eqns=eqns, base_ring=QQ), variables
+
+
+def variable_indices(pair, variables):
+    r"""
+    Return the positions of the two variables of ``pair``: symbolic
+    variables among ``variables``, or integers if ``variables`` is ``None``.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.inputs import variable_indices
+        sage: u, v = var("u, v")
+        sage: variable_indices((v, u), [u, v]), variable_indices((1, 0), None)
+        ((1, 0), (1, 0))
+        sage: variable_indices((u,), [u, v])
+        Traceback (most recent call last):
+        ...
+        ValueError: The buchstab_variables parameter should be a tuple or list
+        with two elements, either two symbolic variables, or two integers.
+    """
+    if len(pair) != 2:
+        raise ValueError(
+            "The buchstab_variables parameter should be a tuple or "
+            "list with two elements, either two symbolic variables, "
+            "or two integers."
+        )
+    if variables is None:
+        return tuple(int(v) for v in pair)
+    if any(v not in variables for v in pair):
+        raise ValueError(
+            "Each of the Buchstab variables should be one "
+            "of the symbolic variables appearing "
+            "in the inequalities"
+        )
+    return tuple(variables.index(v) for v in pair)
+
+
+def parse_polynomial(polynomial_data, variables, dim):
+    r"""
+    Return the polynomial over ``QQ`` in ``dim`` variables described by
+    ``polynomial_data``: a symbolic expression in ``variables`` (those of a
+    symbolic description of the polytope), or a polynomial. ``None`` is
+    returned as is.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.inputs import parse_polynomial
+        sage: u, v = var("u, v")
+        sage: parse_polynomial(1 + u * v^2, [u, v], 2)
+        x0*x1^2 + 1
+        sage: parse_polynomial(1 + u * v^2, [v, u], 2)  # different order
+        x0^2*x1 + 1
+        sage: parse_polynomial(1 + u, None, 2)
+        Traceback (most recent call last):
+        ...
+        ValueError: A symbolic integrand goes with a symbolic description of
+        the polytope. With a Polyhedron object, pass a polynomial in 2 variables.
+    """
+    if polynomial_data is None:
+        return None
+    poly_ring = PolynomialRing(QQ, "x", dim)
+    poly_gens = poly_ring.gens()
+    if isinstance(polynomial_data, Expression):
+        if variables is None:
+            raise ValueError(
+                "A symbolic integrand goes with a symbolic "
+                "description of the polytope. With a Polyhedron "
+                f"object, pass a polynomial in {dim} variables."
+            )
+        try:
+            return poly_ring(polynomial_data.subs(
+                {variables[j]: poly_gens[j] for j in range(dim)}))
+        except TypeError as exc:
+            raise TypeError("The integrand symbolic expression "
+                            "does not parse to a polynomial.") from exc
+    try:
+        return poly_ring(polynomial_data)
+    except TypeError as exc:
+        raise TypeError("The integrand polynomial cannot "
+                        "be parsed. Check that its base ring "
+                        "coerces to QQ, and that it has the "
+                        "right number of variables.") from exc

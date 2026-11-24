@@ -9,7 +9,8 @@ piece or of the result, whichever is larger, rounded up to a multiple
 of `64`. Nodes whose values are not finite, or have too large radii
 for the target precision, are computed again at twice the precision,
 repeatedly and up to ``ESCALATIONS`` times, after which a node which
-still fails raises ``ArithmeticError``.
+still fails raises ``ArithmeticError``. The dictionary ``counts`` holds
+the numbers of nodes summed and of those computed again.
 
 EXAMPLES:
 
@@ -38,6 +39,8 @@ AI DISCLOSURE:
 Claude Opus 5.5 wrote this module.
 
 """
+from sage.misc.misc_c import prod
+
 from ._brion_sum_loader import load_brion_sum
 from .pieces import Trivial
 from .rules import conical_factors
@@ -55,6 +58,9 @@ EXTRA_BITS = 80
 # nodes for which an earlier computation didn't give a precise
 # enough value
 ESCALATIONS = 4
+# the numbers of nodes summed by rule_sum, and of those computed again, since
+# the module was loaded
+counts = {"nodes": 0, "retried": 0}
 
 
 def start_precision(piece, field):
@@ -84,6 +90,8 @@ def brion_sum(piece, prec, ms=None):
     """
     return BrionSum(prec, conical_factors(piece.ms if ms is None else ms, prec),
                     piece.vertices, piece.generators, piece.cones, piece.shift,
+                    exponents=piece.exponents, slopes=piece.slopes,
+                    derivatives=piece.derivatives, ratio=piece.ratio,
                     tolerance_exponent=piece.tolerance_exponent)
 
 
@@ -100,13 +108,16 @@ def rule_sum(piece, prec, ms=None):
 
         sage: import dataclasses
         sage: from sieve_integral_brion.pieces import prepare_piece
-        sage: from sieve_integral_brion.evaluate import brion_sum, rule_sum
+        sage: from sieve_integral_brion.evaluate import brion_sum, counts, rule_sum
         sage: box = Polyhedron(vertices=[(1, 1), (2, 1), (1, 3), (2, 3)])
         sage: piece = prepare_piece(box, False, 30)
         sage: tight = dataclasses.replace(piece, tolerance_exponent=-150)
         sage: len(brion_sum(tight, 128).run()[1]) == piece.ms[0]
         True
+        sage: retried = counts["retried"]
         sage: rule_sum(tight, 128).overlaps(rule_sum(piece, 128))
+        True
+        sage: counts["retried"] - retried == piece.ms[0]
         True
 
     A node on a hyperplane `\langle x, g\rangle = 0` fails at every
@@ -124,9 +135,11 @@ def rule_sum(piece, prec, ms=None):
     """
     ms = piece.ms if ms is None else tuple(ms)
     total, failed = brion_sum(piece, prec, ms).run()
+    counts["nodes"] += prod(ms)
     for _ in range(ESCALATIONS):
         if not failed:
             break
+        counts["retried"] += len(failed)
         prec *= 2
         value, failed = brion_sum(piece, prec, ms).run(explicit=failed)
         total += value

@@ -1,12 +1,12 @@
 r"""
 Preparation of a piece of a polytope for the radial Brion sum: rescaling
-of its coordinates, degree of the rule and bound on its error (or its
-trivial bound).
+of its coordinates, data of its weight, degree of the rule and bound on its
+error (or its trivial bound).
 
 The coordinates of the piece `P` are divided by the centres `c_j = (t_j^-
 + t_j^+)/2` of their ranges `[t_j^-, t_j^+]` on `P`, so that `t_j \in [1 -
 \rho_j, 1 + \rho_j]` on the rescaled piece `P'`, with `\rho_j = (t_j^+ -
-t_j^-)/(t_j^+ + t_j^-)`. The integral of `dt_1 \cdots dt_k/(t_1 \cdots
+t_j^-)/(t_j^+ + t_j^-)`. The integral of `W(t) dt_1 \cdots dt_k/(t_1 \cdots
 t_d)` over `P` is then `\kappa \int_\Delta G`, where `\kappa = 1` if `P` is
 full-dimensional and `\kappa = 1/c_d` if it lies on `\sum_j t_j = 1`
 (Section 3.2 of ``mathematics/radial-brion.pdf``).
@@ -15,21 +15,26 @@ Let `\tau` be the rate of
 :func:`~sieve_integral_brion.chebyshev.chebyshev_inverse_rate` for `\rho =
 \max_j \rho_j`, and `E^{(e)}_M` the `\ell^1` tail beyond the degree `M` of
 the Chebyshev series of `(1 + \eta u)^{-e}`, `\eta = 2\tau/(1 + \tau^2)`
-(Section 2.5 ibid.). A positive rule exact in degree `N \geq D`
-computes `\int_\Delta G` within
+(Section 2.5 ibid.). For the weight `\Phi(L(t)) Q(\psi(t)/t_s)` of
+:mod:`~sieve_integral_brion.integrand`, `Q(y) = \sum_{n=0}^D q_n y^n`, our
+algorithm uses a positive cubature rule exact in degree `N \geq D` to
+compute `\int_\Delta G`. This induces an absolute error at most
 
 .. MATH::
 
-    2 \operatorname{vol}(P') \sum_{n=0}^D w_n E^{(d+n)}_{N-n},
+    2 \operatorname{vol}(P') \sup_{P'} |\Phi(L)| \sum_{n=0}^D w_n E^{(d+n)}_{N-n},
+    \qquad w_n = |q_n| \binom{d + n - 1}{n} \sup_{P'} |\psi|^n
 
-with `w = (1)`, `D = 0`, for the plain integrand (Theorem 3.4 there).
+(Theorem 3.4 there; when `Q` is absent, take `w = (1)` and `D = 0`).
 
 Each piece aims at an error at most `b = 2^{-p}` (Section 4.5 there):
-``SHARE_TRUNCATION`` `\cdot b` for this bound, which determines `N`, and a
-target of ``SHARE_EVALUATION`` `\cdot b` for the radii of the rescaled values at the
-nodes. If the trivial bound `\kappa \operatorname{vol}(P') / \prod_j (1 - \rho_j)`
-is below ``NEGLIGIBLE`` `\cdot b`, we replace the piece by an instance of
-:class:`Trivial` recording the trivial bound.
+``SHARE_TRUNCATION`` `\cdot b` for this bound, which determines `N`;
+``SHARE_COEFFICIENTS`` `\cdot b` for the coefficients left out of the series
+of the weight, their radii being accounted for on top; and a target of
+``SHARE_EVALUATION`` `\cdot b` for the radii of the rescaled values at the
+nodes. If the trivial bound `\kappa \operatorname{vol}(P') \sup_{P'} |W| /
+\prod_j (1 - \rho_j)` is below ``NEGLIGIBLE`` `\cdot b`, we replace the
+piece by an instance of :class:`Trivial` recording the trivial bound.
 
 EXAMPLES:
 
@@ -50,11 +55,20 @@ product of the centres::
     sage: piece.degree == 2 * piece.ms[0] - 1, piece.error <= 59/64 * 2^-30
     (True, True)
 
-A thin box is negligible: its trivial bound is `2^{-40}`::
+A thin box is negligible: its trivial bound is `2^{-40}`, and the plain
+integrand is non-negative::
 
     sage: thin = Polyhedron(vertices=[(1, 1), (1 + 2^-40, 1), (1, 2), (1 + 2^-40, 2)])
     sage: prepare_piece(thin, False, 20)
     Trivial(centre=1/2199023255552, radius=1/2199023255552)
+
+With the weight `t_1 - 3/2`, of either sign, the trivial bound is `2^{-40}`
+times `\sup |t_1 - 3/2| = 1/2`::
+
+    sage: from sieve_integral_brion.integrand import Integrand
+    sage: t1, t2 = QQ["t1, t2"].gens()
+    sage: prepare_piece(thin, False, 20, Integrand(t1 - 3/2))
+    Trivial(centre=0, radius=1/2199023255552)
 
 AUTHORS:
 
@@ -74,10 +88,12 @@ from sage.rings.rational_field import QQ
 
 from .chebyshev import chebyshev_inverse_powers, chebyshev_inverse_rate
 from .geometry import brion_volume, generator_table, vertex_cones
+from .integrand import Integrand, recentred_weight, weight_structure
 
-# the shares of the budget b of a piece: the Chebyshev coefficients of the
-# weights left out (this is not implemented yet), and the target for the radii
-# of the values at the nodes; the truncation bound takes the rest
+# the shares of the requested precision b of a piece: the Chebyshev
+# coefficients truncated off from the weight, and the target for the
+# radii of the values G(x) at the nodes; the truncation bound takes
+# the rest
 SHARE_COEFFICIENTS = QQ(1) / 16
 SHARE_EVALUATION = QQ(1) / 64
 SHARE_TRUNCATION = 1 - SHARE_COEFFICIENTS - SHARE_EVALUATION
@@ -87,6 +103,8 @@ NEGLIGIBLE = QQ(2)**-10
 RATE_BITS = 8
 # the highest degree of the rule
 MAX_DEGREE = 2047
+# the integrand 1/(t_1 ... t_d)
+PLAIN = Integrand(nonnegative=True)
 
 
 @dataclass(frozen=True)
@@ -124,12 +142,23 @@ class PreparedPiece:
     - ``ms`` -- the numbers of nodes of the rule in each direction.
 
     - ``error`` -- the bound on the error of `\kappa` times the rule, a
-      rational number.
+      rational number which is the sum of: the bound coming from
+      truncation of the Chebyshev series for inverse powers using
+      exactness of the rule in degree `N`, and a bound on the error
+      coming from an additional truncation of high-degree coefficients
+      (having small values) and the radii of all coefficients.
 
     - ``tolerance_exponent`` -- the integer `e`: the values at the nodes
       are to have radii at most `2^e`.
 
     - ``precision`` -- the integer `p` of the budget `2^{-p}`.
+
+    - ``weights`` -- the `w_n` of the truncation bound, times `2 \kappa
+      \operatorname{vol}(P') \sup_{P'} |\Phi(L)|`.
+
+    - ``exponents``, ``slopes``, ``derivatives``, ``ratio`` -- the data of
+      the weight for :class:`~sieve_integral_brion._brion_sum.BrionSum`
+      (:func:`~sieve_integral_brion.integrand.weight_structure`).
     """
     centres: tuple
     shift: int
@@ -144,6 +173,11 @@ class PreparedPiece:
     error: object
     tolerance_exponent: int
     precision: int
+    weights: tuple
+    exponents: tuple
+    slopes: object
+    derivatives: tuple
+    ratio: object
 
 
 @lru_cache(maxsize=None)
@@ -240,10 +274,11 @@ def floor_log2(x):
     return e if QQ(2)**e <= x else e - 1
 
 
-def prepare_piece(polytope, border, precision):
+def prepare_piece(polytope, border, precision, integrand=PLAIN):
     r"""
-    Return the data of the radial Brion sum of ``polytope`` and the bound on
-    its error, or its trivial bound if that is negligible.
+    Return the data of the radial Brion sum of ``integrand`` on
+    ``polytope`` and the bound on its error, or its trivial bound if that
+    is negligible.
 
     INPUT:
 
@@ -253,6 +288,9 @@ def prepare_piece(polytope, border, precision):
     - ``border`` -- whether ``polytope`` lies on `\sum_j t_j = 1`.
 
     - ``precision`` -- the integer `p`: the error is to be at most `2^{-p}`.
+
+    - ``integrand`` (default: the plain integrand) -- an
+      :class:`~sieve_integral_brion.integrand.Integrand`.
 
     OUTPUT: a :class:`PreparedPiece`, or a :class:`Trivial` piece.
 
@@ -265,6 +303,17 @@ def prepare_piece(polytope, border, precision):
         sage: piece = prepare_piece(segment, True, 20)
         sage: piece.shift, piece.prefactor, piece.generators, len(piece.ms)
         (1, 8/5, ((5, -3),), 1)
+
+    With the weight given on `[1, 2]` by `B(u) = R(2u - 3)` (here `R = 1` constant)
+    evaluated at `t_2/t_1 \in [1, 3]`: the argument `2t_2/t_1 - 3 = (-3t_1 + 2t_2)/t_1`
+    leaves `[-1, 1]`::
+
+        sage: from sieve_integral_brion.integrand import ChebyshevRatioFactor, Integrand
+        sage: B = Integrand(ratio=ChebyshevRatioFactor((1,), (0, -3, 2), 0))
+        sage: prepare_piece(segment, True, 20, B)
+        Traceback (most recent call last):
+        ...
+        ValueError: the argument of a Chebyshev series leaves [-1, 1] on the polytope
     """
     d = polytope.ambient_dimension()
     k = d - 1 if border else d
@@ -275,20 +324,30 @@ def prepare_piece(polytope, border, precision):
     vertices, cones = vertex_cones(polytope, centres, border)
     volume = brion_volume(vertices, cones, k, check=True)
     budget = QQ(2)**-precision
-    trivial = prefactor * volume / prod(1 - r for r in rhos)
+    weight = recentred_weight(integrand, centres, vertices, border)
+    # the trivial bound of the plain integrand, then with the weight
+    size = prefactor * volume / prod(1 - r for r in rhos)
+    trivial = size * weight.mass
     if trivial < NEGLIGIBLE * budget:
-        return Trivial(trivial / 2, trivial / 2)
+        if weight.nonnegative:
+            return Trivial(trivial / 2, trivial / 2)
+        return Trivial(QQ(0), trivial)
     rate = chebyshev_inverse_rate(max(rhos), RATE_BITS)
-    scale = 2 * prefactor * volume
-    N = least_degree(d, rate, [1], SHARE_TRUNCATION * budget / scale)
+    generators, indexed = generator_table(cones)
+    # each series may leave out its share of the error allowance
+    allowance = SHARE_COEFFICIENTS * budget / (trivial * max(len(weight.series), 1))
+    structure = weight_structure(weight, allowance, vertices, generators)
+    weights = tuple(2 * prefactor * volume * structure.bound * w for w in structure.weights)
+    N = least_degree(d, rate, weights, SHARE_TRUNCATION * budget)
     # the rule with m points in each direction is exact in degree 2m - 1
     m = max(2, (N + 2) // 2)
-    generators, indexed = generator_table(cones)
     # the rule's weights add up to 1/(d - 1)!
     tolerance = SHARE_EVALUATION * budget * factorial(d - 1) / prefactor
     return PreparedPiece(
         centres=centres, shift=d - k, prefactor=prefactor, volume=volume, rate=rate,
         vertices=tuple(vertices), generators=tuple(generators), cones=tuple(indexed),
         degree=2 * m - 1, ms=(m,) * (d - 1),
-        error=scale * truncation_bound(d, rate, 2 * m - 1, [1]),
-        tolerance_exponent=floor_log2(tolerance), precision=precision)
+        error=truncation_bound(d, rate, 2 * m - 1, weights) + size * structure.loss,
+        tolerance_exponent=floor_log2(tolerance), precision=precision, weights=weights,
+        exponents=structure.exponents, slopes=structure.slopes,
+        derivatives=structure.derivatives, ratio=structure.ratio)
