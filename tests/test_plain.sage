@@ -2,8 +2,9 @@ r"""
 Check sieve_integral without cutting, on polytopes whose integral has a closed
 form, and check the input handling (before integration); check that the error
 bound of a piece holds against a rule of higher degree on random pieces, that
-negligible pieces are replaced by their trivial bound, and that the nodes left
-out by BrionSum are computed again at a higher precision.
+negligible pieces are replaced by their trivial bound, that the nodes left
+out by BrionSum are computed again at a higher precision, and that a
+polytope too wide for a rule of degree up to MAX_DEGREE raises DegreeTooHigh.
 """
 import dataclasses
 import random
@@ -29,7 +30,7 @@ def test_plain_closed_forms():
         ("segment", Polyhedron(vertices=[(1/4, 3/4), (1/2, 1/2)]), 50, R(3).log()),
         # the docstring example of the library's sieve_integral
         ("t_1 + t_2 + t_3 = 1", simplex, 50,
-         C.integral(lambda x, _: (6 - x).log() / x, 1, 5).real() / 2),
+         C.integral(lambda x, a: (6 - x).log(analytic=a) / x, 1, 5).real() / 2),
         # the library's test of the rounding of its grid
         ("grid rounding", grid_box, 30, R(285605/100000).log() * R(6/5).log()),
     ]
@@ -126,10 +127,22 @@ def test_plain_bound_audit():
     assert checked >= 15, checked
 
 
+def test_plain_degree_too_high():
+    # a square too wide for a rule of degree up to MAX_DEGREE
+    square = Polyhedron(vertices=[(1, 1), (10^5, 1), (1, 10^5), (10^5, 10^5)])
+    try:
+        plain_pieces.prepare_piece(square, False, 20)
+    except plain_pieces.DegreeTooHigh:
+        pass
+    else:
+        raise AssertionError("no DegreeTooHigh on [1, 10^5]^2")
+
+
 TESTS = {
     "plain/closed-forms": (test_plain_closed_forms, ("quick",)),
     "plain/inputs": (test_plain_inputs, ("quick",)),
     "plain/trivial-pieces": (test_plain_trivial_pieces, ("quick",)),
     "plain/escalation": (test_plain_escalation, ("quick",)),
     "plain/bound-audit": (test_plain_bound_audit, ("quick",)),
+    "plain/degree-too-high": (test_plain_degree_too_high, ("quick",)),
 }

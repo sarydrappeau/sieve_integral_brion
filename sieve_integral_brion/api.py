@@ -18,17 +18,19 @@ AI DISCLOSURE:
 
 Claude Opus 5.5 wrote this module.
 """
+import dataclasses
+
 from sage.geometry.polyhedron.constructor import Polyhedron
-from sage.misc.misc_c import prod
 from sage.rings.rational_field import QQ
 from sage.rings.real_arb import RealBallField
 
 from .dde import BuchstabB
 from .evaluate import counts, integrate_piece
-from .inputs import (as_polytope, check_positive_orthant, is_polytope_on_sum1,
+from .inputs import (as_polytope, check_positive_orthant, eqn_sum_one, is_polytope_on_sum1,
                      parse_polynomial, variable_indices)
-from .integrand import ChebyshevAffineFactor, ChebyshevRatioFactor, Integrand
-from .pieces import PLAIN, Trivial, prepare_piece
+from .integrand import (ChebyshevAffineFactor, ChebyshevRatioFactor, Integrand,
+                        with_essential_forms)
+from .pieces import PLAIN, prepare_piece
 from .segments import closed_form_integral
 
 # B is computed with these bits above the precision, to mitigate the error loss
@@ -36,45 +38,90 @@ from .segments import closed_form_integral
 BUCHSTAB_EXTRA_BITS = 10
 
 
-def integrate_polytope(polytope, border, integrand, precision, field, verbose=0,
-                       name="sieve_integral"):
+def integrate_many(tasks, processes=None, field=None, verbose=0):
     r"""
-    Return a ball of ``field`` containing the integral of ``integrand``
-    over ``polytope``, taken as one piece of budget `2^{-p}`, `p` being
-    ``precision`` (or in closed form if its dimension is at most `1`);
-    if ``verbose`` is positive, ``name`` is prepended to the printed lines.
+    Return a ball containing the sum of the integrals of the tasks ``tasks``.
+
+    INPUT:
+
+    - ``tasks`` -- tuples ``(ieqs, eqns, integrand, options)``: a polytope
+      by its inequalities and equations (either no equations, or that of
+      `\sum_j t_j = 1`), in the open positive orthant, an
+      :class:`~sieve_integral_brion.integrand.Integrand`, and a dictionary
+      with the key ``"precision"``, the integer `p`: each polytope is taken
+      as one piece, whose error is at most `2^{-p}`. The polytopes of
+      dimension at most `1` are integrated in closed form, and those of
+      lower dimension than their space are left out.
+
+    - ``processes`` (default: ``None``) -- to be implemented in the next
+      commit (the computation is not parallelized in this one yet).
+
+    - ``field`` (default: ``None``) -- the ball field of the result, by
+      default that of the largest precision of the tasks.
+
+    - ``verbose`` (default: 0) -- if positive, print the numbers of nodes,
+      of nodes computed again at a higher precision, of singular nodes and
+      of reconfigurations of the rule.
 
     EXAMPLES:
 
-    Testing `\int_1^2 \int_1^2 (t_1 t_2) dt_1 dt_2 / t_1 t_2 = 1`::
+    The integral of `1 + 2 t_1` over `P = \{1/10 < t_1 < t_2 < t_3, \sum_j
+    t_j = 1\}`, compared with its value as one-dimensional integral
 
-        sage: from sieve_integral_brion.api import integrate_polytope
+    .. MATH::
+
+        \int_P \frac{(1 + 2 t_1) dt_1 dt_2}{t_1 t_2 t_3} = \int_{1/10}^{1/3}
+        \frac{1 + 2 t}{t (1 - t)} \log\frac{1 - 2 t}{t} dt,
+
+    computed by Arb::
+
+        sage: from sieve_integral_brion.api import integrate_many
         sage: from sieve_integral_brion.integrand import Integrand
-        sage: box = Polyhedron(vertices=[(1, 1), (2, 1), (1, 2), (2, 2)])
-        sage: t1, t2 = QQ["t1, t2"].gens()
-        sage: value = integrate_polytope(box, False, Integrand(t1 * t2), 20, RBF)
-        sage: value.contains_exact(1), value.rad() < 2^-20
+        sage: t1 = QQ["t1, t2, t3"].gen(0)
+        sage: P = [(-1/10, 1, 0, 0), (0, -1, 1, 0), (0, 0, -1, 1)]
+        sage: value = integrate_many([(P, [(-1, 1, 1, 1)], Integrand(1 + 2 * t1),
+        ....:                          {"precision": 20})])
+        sage: C = ComplexBallField(100)
+        sage: expected = C.integral(lambda t, a: (1 + 2 * t) * ((1 - 2 * t) / t).log(analytic=a)
+        ....:                       / (t * (1 - t)), 1/10, 1/3).real()
+        sage: value.overlaps(expected), value.rad() < 2^-20
         (True, True)
     """
-    if polytope.ambient_dimension() - border <= 1:
-        if verbose > 0:
-            print(f"{name}: in closed form")
-        return closed_form_integral(polytope, border, integrand, precision, field)
-    piece = prepare_piece(polytope, border, precision, integrand)
-    if verbose > 0:
-        if isinstance(piece, Trivial):
-            print(f"{name}: the trivial bound {float(piece.centre + piece.radius):.3g}")
-        else:
-            print(f"{name}: degree {piece.degree}, {prod(piece.config.ms)} nodes, "
-                  f"error bound {float(piece.error):.3g}")
+    if field is None:
+        field = RealBallField(max((options["precision"] for *_, options in tasks), default=20))
+    values = []
     before = dict(counts)
-    value = integrate_piece(piece, field, polytope, border, integrand)
-    if verbose > 0 and counts["retried"] > before["retried"]:
-        print(f"{name}: {counts['retried'] - before['retried']} nodes computed again")
-    if verbose > 0 and counts["reconfigured"] > before["reconfigured"]:
-        print(f"{name}: {counts['singular'] - before['singular']} singular nodes, "
-              f"{counts['reconfigured'] - before['reconfigured']} reconfigurations")
-    return value
+    for ieqs, eqns, integrand, options in tasks:
+        polytope = Polyhedron(ieqs=ieqs, eqns=eqns or None, base_ring=QQ)
+        border = bool(eqns)
+        k = polytope.ambient_dimension() - border
+        if polytope.dimension() < k:
+            continue
+        precision = options["precision"]
+        if k <= 1:
+            values.append(closed_form_integral(polytope, border, integrand, precision, field))
+            continue
+        integrand = with_essential_forms(integrand, border)
+        piece = prepare_piece(polytope, border, precision, integrand)
+        values.append(integrate_piece(piece, field, polytope, border, integrand))
+    if verbose > 0:
+        change = {name: counts[name] - before[name] for name in counts}
+        print(f"integrate_many: {change['nodes']} nodes, {change['retried']} computed "
+              f"again, {change['singular']} singular, {change['reconfigured']} "
+              f"reconfigurations")
+    # added smallest first, with 64 more bits than the field, for the
+    # rounding of the sum
+    wide = RealBallField(field.precision() + 64)
+    values.sort(key=lambda v: (abs(v.mid()), v.mid(), v.rad()))
+    return field(sum((wide(v) for v in values), wide.zero()))
+
+
+def polytope_task(polytope, border, integrand, precision):
+    r"""
+    Return the task of :func:`integrate_many` for ``integrand`` on ``polytope``.
+    """
+    eqns = [eqn_sum_one(polytope.ambient_dimension())] if border else []
+    return (polytope.inequalities_list(), eqns, integrand, {"precision": precision})
 
 
 def weighted_polytope(polytope_data, facteur):
@@ -115,10 +162,8 @@ def sieve_integral(polytope_data, precision=20, facteur=None, processes=None,
     - ``processes`` (default: ``None``) -- ignored for now: the computation
       is not parallelized.
 
-    - ``verbose`` (default: 0) -- if positive, print the degree of the rule,
-      its number of nodes and the error bound, the number of nodes computed
-      again at a higher precision, those of singular nodes and of
-      reconfigurations of the rule, then the value.
+    - ``verbose`` (default: 0) -- if positive, print the counts of
+      :func:`integrate_many`, then the value.
 
     - ``engine`` (default: ``None``) -- ignored for now.
 
@@ -142,7 +187,8 @@ def sieve_integral(polytope_data, precision=20, facteur=None, processes=None,
         ....:                       ieqs=[(-1/7, 1, 0, 0), (0, -1, 1, 0), (0, 0, -1, 1)])
         sage: value = sieve_integral(polytope, precision=50)
         sage: C = ComplexBallField(100)
-        sage: value.overlaps(C.integral(lambda x, _: (6 - x).log() / x, 1, 5).real() / 2)
+        sage: value.overlaps(C.integral(lambda x, a: (6 - x).log(analytic=a) / x,
+        ....:                           1, 5).real() / 2)
         True
 
     The polytope has to lie in the open positive orthant::
@@ -173,7 +219,8 @@ def sieve_integral(polytope_data, precision=20, facteur=None, processes=None,
         ratio = b * (1 - a) / (a * (1 - b)) if border else b / a
         # arb.log tends to deteriorate radius, so we raise precision for safety
         return field(RealBallField(precision + 64)(ratio).log())
-    value = integrate_polytope(polytope, border, PLAIN, precision, field, verbose)
+    value = integrate_many([polytope_task(polytope, border, PLAIN, precision)],
+                           processes, field, verbose)
     if verbose > 0:
         print(f"sieve_integral returning {value}")
     return value
@@ -190,8 +237,9 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
     The polytope `P \subset \RR_{>0}^d` is either full-dimensional (`k =
     d`), or on the hyperplane `\sum_j t_j = 1` (`k = d - 1`). It is cut by
     the intervals `[n, n + 1]` of `t_r/t_s` on which `B` is a Chebyshev
-    series (computed ``BUCHSTAB_EXTRA_BITS`` bits above the precision). If
-    `k \leq 1`, the integral is in closed form.
+    series (computed ``BUCHSTAB_EXTRA_BITS`` bits above the precision), and
+    the parts are integrated together by :func:`integrate_many`. If `k \leq
+    1`, the integral is in closed form.
 
     INPUT:
 
@@ -212,10 +260,8 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
 
     - ``facteur``, ``processes``, ``engine`` -- as in :func:`sieve_integral`.
 
-    - ``verbose`` (default: 0) -- if positive, print the degree of the rule,
-      its number of nodes and its error bound on each part, the number of
-      nodes computed again at a higher precision, and those of singular
-      nodes and of reconfigurations of the rule.
+    - ``verbose`` (default: 0) -- if positive, print the counts of
+      :func:`integrate_many`.
 
     OUTPUT: a ball of ``RealBallField(precision)``.
 
@@ -230,8 +276,8 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
         [1.69211856327702 +/- ...e-15]
         sage: C = ComplexBallField(100)
         sage: exact = (C.integral(lambda t, _: (1 + t)/(t*(1 - t)), 1/3, 1/2)
-        ....:          + C.integral(lambda t, _: (1 + (1/t - 2).log()) * (1 + t)/(t*(1 - t)),
-        ....:                       1/4, 1/3)).real()
+        ....:          + C.integral(lambda t, a: (1 + (1/t - 2).log(analytic=a))
+        ....:                                    * (1 + t)/(t*(1 - t)), 1/4, 1/3)).real()
         sage: value.overlaps(exact)
         True
 
@@ -261,16 +307,17 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
     if border is None:
         return field.zero()
     # B >= 0, so that the weight is non-negative if F = 1
-    nonnegative = polynomial is None
+    # the essential forms of F, computed once for all the parts
+    integrand = with_essential_forms(Integrand(polynomial, nonnegative=polynomial is None), border)
     if indices is None:
-        integrand = Integrand(polynomial, nonnegative=nonnegative)
-        return integrate_polytope(polytope, border, integrand, precision, field, verbose,
-                                  "sieve_integral_harman")
+        return integrate_many([polytope_task(polytope, border, integrand, precision)],
+                              processes, field, verbose)
     r, s = indices
     buchstab = BuchstabB(precision=precision + BUCHSTAB_EXTRA_BITS, expansion="chebyshev")
     mini, maxi = polytope.bounding_box()
     buchstab(maxi[r] / mini[s])
-    value = field.zero()
+    ieqs, eqns, _, options = polytope_task(polytope, border, integrand, precision)
+    tasks = []
     for start, end, coefficients in buchstab.chebyshev_approximants_list():
         start, end = QQ(start), QQ(end)
         # start <= t_r/t_s <= end, on which B(t_r/t_s) is the series of
@@ -279,15 +326,9 @@ def sieve_integral_harman(polytope_data, buchstab_variables, integrand_polynomia
         rows[0][1 + r], rows[0][1 + s] = 1, -start
         rows[1][1 + r], rows[1][1 + s] = -1, end
         rows[2][1 + r], rows[2][1 + s] = 2 / (end - start), -(start + end) / (end - start)
-        part = polytope.intersection(Polyhedron(ieqs=rows[:2], base_ring=QQ))
-        if part.dimension() < polytope.dimension():
-            continue
-        integrand = Integrand(polynomial,
-                              ratio=ChebyshevRatioFactor(tuple(coefficients), tuple(rows[2]), s),
-                              nonnegative=nonnegative)
-        value += integrate_polytope(part, border, integrand, precision, field, verbose,
-                                    "sieve_integral_harman")
-    return value
+        ratio = ChebyshevRatioFactor(tuple(coefficients), tuple(rows[2]), s)
+        tasks.append((ieqs + rows[:2], eqns, dataclasses.replace(integrand, ratio=ratio), options))
+    return integrate_many(tasks, processes, field, verbose)
 
 
 def sieve_integral_factors(polytope_data, factors, polynomial=None, precision=20,
@@ -354,7 +395,7 @@ def sieve_integral_factors(polytope_data, factors, polynomial=None, precision=20
         sage: value = sieve_integral_factors(box, [(coefficients, (-5, 0, 1))],
         ....:                                precision=40, nonnegative=True)
         sage: C = ComplexBallField(100)
-        sage: integral = C.integral(lambda t, _: (1 + (t/2 - 1).log()) / t, 4, 6).real()
+        sage: integral = C.integral(lambda t, a: (1 + (t/2 - 1).log(analytic=a)) / t, 4, 6).real()
         sage: exact = K(3/2).log() * integral
         sage: value.overlaps(exact), value.rad() < 2^-39
         (True, True)
@@ -373,5 +414,5 @@ def sieve_integral_factors(polytope_data, factors, polynomial=None, precision=20
         return field.zero()
     chebyshev = tuple(ChebyshevAffineFactor(tuple(c), tuple(form)) for c, form in factors)
     integrand = Integrand(polynomial, chebyshev, nonnegative=nonnegative)
-    return integrate_polytope(polytope, border, integrand, precision, field, verbose,
-                              "sieve_integral_factors")
+    return integrate_many([polytope_task(polytope, border, integrand, precision)],
+                          processes, field, verbose)

@@ -13,17 +13,18 @@ import random
 from sieve_integral_brion import (api as weights_api, dde as weights_dde,
                                   evaluate as weights_evaluate,
                                   integrand as weights_integrand,
-                                  pieces as weights_pieces)
+                                  pieces as weights_pieces, segments as weights_segments)
 
 WEIGHTS_FIELD = RealBallField(200)
 
 
 def weights_integral(f, a, b):
     r"""
-    `\int_a^b f(t) dt`, by Arb.
+    `\int_a^b f(t) dt`, by Arb; ``f(t, analytic)`` passes ``analytic`` to
+    its logarithms.
     """
     C = ComplexBallField(WEIGHTS_FIELD.precision())
-    return C.integral(lambda t, _: f(t), a, b).real()
+    return C.integral(f, a, b).real()
 
 
 def weights_check(value, expected, precision, what, parts=1):
@@ -55,7 +56,7 @@ def test_weights_polynomials():
     t1, t2, t3 = PolynomialRing(QQ, "t", 3).gens()
     cases += [
         ("triangle, t_3^2", triangle, t3^2, weights_integral(
-            lambda t: ((1 - t) * (3 - 4 * t).log() - (1/2 - t)) / t, 1/4, 1/2)),
+            lambda t, a: ((1 - t) * (3 - 4 * t).log(analytic=a) - (1/2 - t)) / t, 1/4, 1/2)),
         ("triangle, t_1 t_2 t_3", triangle, t1 * t2 * t3, R(1/32)),
     ]
     for name, polytope, F, expected in cases:
@@ -69,9 +70,9 @@ def test_weights_harman():
     for name, F, f in [("1 + x", 1 + x, lambda t: 1 + t), ("x^2", x^2, lambda t: t^2),
                        ("x^3", x^3, lambda t: t^3)]:
         # B(y/x) is 1 for x in [1/3, 1/2], and 1 + log(y/x - 1) for x in [1/4, 1/3]
-        expected = (weights_integral(lambda t: f(t) / (t * (1 - t)), 1/3, 1/2)
-                    + weights_integral(lambda t: (1 + (1/t - 2).log()) * f(t) / (t * (1 - t)),
-                                       1/4, 1/3))
+        expected = (weights_integral(lambda t, _: f(t) / (t * (1 - t)), 1/3, 1/2)
+                    + weights_integral(lambda t, a: (1 + (1/t - 2).log(analytic=a)) * f(t)
+                                       / (t * (1 - t)), 1/4, 1/3))
         for precision in (20, 50):
             weights_check(harman(polytope, (y, x), F, precision=precision), expected,
                           precision, f"harman, {name}, {precision} bits", parts=2)
@@ -88,7 +89,7 @@ def test_weights_factors():
     B = weights_dde.BuchstabB(precision=60, expansion="chebyshev")
     on_2_3 = B.chebyshev_approximants_list()[2][2]
     # B(t/2) on [4, 6], where t/2 - 1 is in [1, 2]
-    B_integral = weights_integral(lambda t: (1 + (t/2 - 1).log()) / t, 4, 6)
+    B_integral = weights_integral(lambda t, a: (1 + (t/2 - 1).log(analytic=a)) / t, 4, 6)
     cases = [
         ("T_1(t_1 - 5)", [([0, 1], (-5, 1, 0))], None, (2 - 5 * log) * log),
         ("T_1(t_1 - 5) T_2(t_2 - 5)", [([0, 1], (-5, 1, 0)), ([0, 0, 1], (-5, 0, 1))], None,
@@ -146,9 +147,9 @@ def test_weights_low_dimension():
                           precision=50), R(1/8), 50, "segment, x y T_1(4 x - 1)")
     # B(x/y), the divisor being t_2 = 1 - t_1: Harman's example, x and y
     # exchanged
-    expected = (weights_integral(lambda t: (1 + t) / (t * (1 - t)), 1/3, 1/2)
-                + weights_integral(lambda t: (1 + (1/t - 2).log()) * (1 + t) / (t * (1 - t)),
-                                   1/4, 1/3))
+    expected = (weights_integral(lambda t, _: (1 + t) / (t * (1 - t)), 1/3, 1/2)
+                + weights_integral(lambda t, a: (1 + (1/t - 2).log(analytic=a)) * (1 + t)
+                                   / (t * (1 - t)), 1/4, 1/3))
     weights_check(harman([x + y == 1, 1/4 < y, y < x], (x, y), 1 + y, precision=50),
                   expected, 50, "harman, x and y exchanged", parts=2)
     # against the rule, where B(t_2/t_1) = 1 + log(t_2/t_1 - 1), on [2, 3]
@@ -159,7 +160,7 @@ def test_weights_low_dimension():
     integrand = weights_integrand.Integrand(
         1 + t1, ratio=weights_integrand.ChebyshevRatioFactor(tuple(on_2_3), (0, -5, 2), 0))
     field = RealBallField(50)
-    closed = weights_api.integrate_polytope(part, True, integrand, 50, field)
+    closed = weights_segments.closed_form_integral(part, True, integrand, 50, field)
     ruled = weights_evaluate.evaluate_piece(
         weights_pieces.prepare_piece(part, True, 50, integrand), field)
     check_overlap(closed, ruled, "closed form against the rule")
@@ -203,6 +204,43 @@ def test_weights_bound_audit():
     assert checked >= 12, checked
 
 
+def test_weights_essential_forms():
+    # computed once for the parts of a harman integral
+    calls = []
+    essential_forms = weights_integrand.essential_forms
+
+    def counting(*arguments):
+        calls.append(arguments)
+        return essential_forms(*arguments)
+    t1, t2 = PolynomialRing(QQ, "x", 2).gens()
+    box = Polyhedron(vertices=[(1, 2), (2, 2), (1, 5), (2, 5)])
+    nodes = weights_evaluate.counts["nodes"]
+    weights_integrand.essential_forms = counting
+    try:
+        weights_api.sieve_integral_harman(box, (1, 0), 1 + t1 + t2^2, precision=20)
+    finally:
+        weights_integrand.essential_forms = essential_forms
+    assert len(calls) == 1, len(calls)
+    assert weights_evaluate.counts["nodes"] > nodes
+
+
+def test_weights_integrate_many():
+    # a box, a segment of t_1 + t_2 = 1 in closed form, and polytopes which
+    # are empty or of lower dimension than their space, left out
+    R = WEIGHTS_FIELD
+    t1, t2 = PolynomialRing(QQ, "x", 2).gens()
+    options = {"precision": 30}
+    box = [(-1, 1, 0), (2, -1, 0), (-1, 0, 1), (2, 0, -1)]
+    tasks = [(box, [], weights_integrand.Integrand(t1 * t2), options),
+             ([(-1/4, 1, 0), (3/4, -1, 0)], [(-1, 1, 1)], weights_integrand.Integrand(), options),
+             (box + [(-3, 1, 0)], [], weights_integrand.Integrand(), options),
+             (box + [(0, 1, -1), (0, -1, 1)], [], weights_integrand.Integrand(), options)]
+    value = weights_api.integrate_many(tasks)
+    assert value.parent() is RealBallField(30), value.parent()
+    weights_check(value, 1 + 2 * R(3).log(), 30, "integrate_many", parts=2)
+    assert weights_api.integrate_many([]).is_zero()
+
+
 TESTS = {
     "weights/polynomials": (test_weights_polynomials, ("quick",)),
     "weights/harman": (test_weights_harman, ("quick",)),
@@ -210,4 +248,6 @@ TESTS = {
     "weights/inputs": (test_weights_inputs, ("quick",)),
     "weights/low-dimension": (test_weights_low_dimension, ("quick",)),
     "weights/bound-audit": (test_weights_bound_audit, ("quick",)),
+    "weights/essential-forms": (test_weights_essential_forms, ("quick",)),
+    "weights/integrate-many": (test_weights_integrate_many, ("quick",)),
 }

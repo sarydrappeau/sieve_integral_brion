@@ -39,6 +39,10 @@ nodes. If the trivial bound `\kappa \operatorname{vol}(P') \sup_{P'} |W| /
 \prod_j (1 - \rho_j)` is below ``NEGLIGIBLE`` `\cdot b`, we replace the
 piece by an instance of :class:`Trivial` recording the trivial bound.
 
+The work load is estimated (``PreparedPiece.work``) so as to optimize the
+choice of ratios driving the splitting of the polytope's pieces before
+integration.
+
 EXAMPLES:
 
 An integral from Chen's second example (Section 2.5.1 of
@@ -101,14 +105,24 @@ from .rules import choose_config
 SHARE_COEFFICIENTS = QQ(1) / 16
 SHARE_EVALUATION = QQ(1) / 64
 SHARE_TRUNCATION = 1 - SHARE_COEFFICIENTS - SHARE_EVALUATION
+
 # a piece whose trivial bound is below this fraction of b is replaced by it
 NEGLIGIBLE = QQ(2)**-10
+
 # the binary digits of the rate tau
 RATE_BITS = 8
+
 # the highest degree of the rule
 MAX_DEGREE = 2047
+
 # the integrand 1/(t_1 ... t_d)
 PLAIN = Integrand(nonnegative=True)
+
+
+class DegreeTooHigh(ArithmeticError):
+    r"""
+    No degree of the rule up to ``MAX_DEGREE`` meets the target.
+    """
 
 
 @dataclass(frozen=True)
@@ -186,6 +200,35 @@ class PreparedPiece:
     derivatives: tuple
     ratio: object
 
+    @property
+    def node_work(self):
+        r"""
+        The estimated work of the radial Brion sum at one node, in
+        operations on balls.
+        """
+        d, V, rank = len(self.centres), len(self.vertices), len(self.cones[0][1])
+        forms = len(self.exponents[0])
+        terms = 1 if self.ratio is None else len(self.ratio[0])
+        M = len(self.exponents) * terms
+        return (len(self.generators) * (d + 2 + forms) + V * (d + 30)
+                + len(self.cones) * (rank + 1 + M * (1 + rank * (forms + 1)))
+                + V * M * (2 + terms))
+
+    @property
+    def work(self):
+        r"""
+        The estimated work of the radial Brion sum over the rule.
+
+        EXAMPLES::
+
+            sage: from sieve_integral_brion.pieces import prepare_piece
+            sage: box = Polyhedron(vertices=[(1, 1), (2, 1), (1, 3), (2, 3)])
+            sage: piece = prepare_piece(box, False, 40)
+            sage: piece.config.ms, piece.node_work, piece.work
+            ((13,), 172, 2236)
+        """
+        return prod(self.config.ms) * self.node_work
+
 
 @lru_cache(maxsize=None)
 def inverse_power_tails(rate, power, size):
@@ -245,7 +288,8 @@ def truncation_bound(d, rate, N, weights):
 def least_degree(d, rate, weights, target):
     r"""
     Return the least degree `N \geq D`, `D + 1` the length of ``weights``,
-    whose :func:`truncation_bound` is at most ``target``.
+    whose :func:`truncation_bound` is at most ``target``, or raise
+    :class:`DegreeTooHigh` if it is above ``MAX_DEGREE``.
 
     EXAMPLES:
 
@@ -261,8 +305,8 @@ def least_degree(d, rate, weights, target):
     while truncation_bound(d, rate, N, weights) > target:
         N += 1
         if N > MAX_DEGREE:
-            raise ArithmeticError(f"no degree up to {MAX_DEGREE} has a truncation "
-                                  f"bound below {target}")
+            raise DegreeTooHigh(f"no degree up to {MAX_DEGREE} has a truncation "
+                                f"bound below {target}")
     return N
 
 

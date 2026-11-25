@@ -136,6 +136,7 @@ Claude Opus 5.5 wrote this module, from a prototype it had written for the
 ``sieve_integral`` library.
 
 """
+import dataclasses
 import itertools
 from dataclasses import dataclass
 
@@ -190,11 +191,15 @@ class Integrand:
     - ``ratio`` -- its :class:`ChebyshevRatioFactor`, or ``None``.
 
     - ``nonnegative`` -- whether `W \geq 0` on the polytope.
+
+    - ``essential`` -- ``None``, or the triple ``(border, A, phi)`` of
+      :func:`with_essential_forms`; ignored by comparisons.
     """
     polynomial: object = None
     factors: tuple = ()
     ratio: object = None
     nonnegative: bool = False
+    essential: object = dataclasses.field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -355,6 +360,32 @@ def essential_forms(polynomial, border):
             polynomial(*image))
 
 
+def with_essential_forms(integrand, border):
+    r"""
+    Return ``integrand`` with the field ``essential`` set to ``(border, A,
+    phi)``, ``(A, phi)`` being the :func:`essential_forms` of its
+    polynomial. It does nothing and returns ``integrand`` if there is no
+    integrand (weight 1), or if this has already been done.
+
+    EXAMPLES::
+
+        sage: from sieve_integral_brion.integrand import Integrand, with_essential_forms
+        sage: t1, t2 = QQ["t1, t2"].gens()
+        sage: integrand = with_essential_forms(Integrand((t1 + t2)^2), False)
+        sage: integrand.essential
+        (False, ((1, 1),), y^2)
+        sage: with_essential_forms(integrand, False) is integrand
+        True
+        sage: with_essential_forms(integrand, True).essential
+        (True, (), 1)
+    """
+    if integrand.polynomial is None or (integrand.essential is not None
+                                        and integrand.essential[0] == border):
+        return integrand
+    return dataclasses.replace(integrand, essential=(border,) + essential_forms(
+        integrand.polynomial, border))
+
+
 def midpoints_and_radius(coefficients):
     r"""
     Return the midpoints of ``coefficients``, balls or rational numbers, as
@@ -428,7 +459,7 @@ def recentred_weight(integrand, centres, vertices, border):
     else:
         if integrand.polynomial.parent().ngens() != d:
             raise ValueError(f"the polynomial must have {d} variables")
-        linear, polynomial = essential_forms(integrand.polynomial, border)
+        _, linear, polynomial = with_essential_forms(integrand, border).essential
         forms = tuple((QQ(0),) + tuple(a * c for a, c in zip(A, centres)) for A in linear)
         if forms:
             # the sum of the absolute values of the coefficients of phi,

@@ -39,8 +39,9 @@ def config_cases():
     """
     C = ComplexBallField(CONFIG_FIELD.precision())
     edge = (CONFIG_FIELD(2).log()
-            * C.integral(lambda t, _: (4 - t).log() / t, 1, 3).real())
-    simplex = C.integral(lambda t, _: 2 * (4 - 5 * t).log() / (t * (1 - t)), 1/5, 3/5).real()
+            * C.integral(lambda t, a: (4 - t).log(analytic=a) / t, 1, 3).real())
+    simplex = C.integral(lambda t, a: 2 * (4 - 5 * t).log(analytic=a) / (t * (1 - t)),
+                         1/5, 3/5).real()
     return [("edge e_2 - e_3", CONFIG_EDGE, False, 16, edge),
             ("simplex", CONFIG_SIMPLEX, True, 14, simplex)]
 
